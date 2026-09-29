@@ -8,6 +8,7 @@ import type {
 import { shouldMaintainPitch } from "@/retime/rate";
 import type { MediaAsset } from "@/media/types";
 import { applyAudioMasteringToBuffer } from "@/media/audio-mastering";
+import { enhanceAudioBuffer } from "@/media/audio-enhancer";
 import type { AudioCapableElement } from "@/timeline/audio-state";
 import {
 	hasAnimatedVolume,
@@ -671,9 +672,27 @@ export async function createTimelineAudioBuffer({
 				})
 			: undefined;
 
+		let bufferToMix = renderedBuffer ?? element.buffer;
+
+		const params = element.timelineElement.params ?? {};
+		const isEnhanced =
+			params.enhanceAudio === true ||
+			params.noiseReduction === true ||
+			params.vocalBoost === true;
+
+		if (isEnhanced) {
+			bufferToMix = await enhanceAudioBuffer({
+				audioBuffer: bufferToMix,
+				config: {
+					noiseReduction: params.noiseReduction !== false,
+					vocalBoost: params.vocalBoost !== false,
+				},
+			});
+		}
+
 		mixAudioChannels({
 			element,
-			buffer: renderedBuffer ?? element.buffer,
+			buffer: bufferToMix,
 			trimStart: renderedBuffer ? 0 : element.trimStart,
 			retime: renderedBuffer ? undefined : element.retime,
 			outputBuffer,

@@ -171,6 +171,27 @@ const audioElementParams: ElementParamDefinition[] = [
 		default: false,
 		keyframable: false,
 	},
+	{
+		key: "enhanceAudio",
+		label: "Enhance Voice & Audio",
+		type: "boolean",
+		default: false,
+		keyframable: false,
+	},
+	{
+		key: "noiseReduction",
+		label: "Reduce Background Noise",
+		type: "boolean",
+		default: false,
+		keyframable: false,
+	},
+	{
+		key: "vocalBoost",
+		label: "Vocal Clarity Boost",
+		type: "boolean",
+		default: false,
+		keyframable: false,
+	},
 ];
 
 const textElementParams: ElementParamDefinition[] = [

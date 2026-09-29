@@ -56,6 +56,30 @@ function requireString(
 	return value;
 }
 
+function optionalString(
+	args: Record<string, unknown>,
+	key: string,
+): string | undefined {
+	const value = args[key];
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "string") {
+		throw new Error(`Argument "${key}" must be a string`);
+	}
+	return value;
+}
+
+function optionalBoolean(
+	args: Record<string, unknown>,
+	key: string,
+): boolean | undefined {
+	const value = args[key];
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "boolean") {
+		throw new Error(`Argument "${key}" must be a boolean`);
+	}
+	return value;
+}
+
 function optionalNumber(
 	args: Record<string, unknown>,
 	key: string,
@@ -95,6 +119,40 @@ function findElementById(
 		if (element) return { trackId: track.id, element };
 	}
 	throw new Error(`Element not found: ${elementId}`);
+}
+
+function findAudioCapableElement(
+	editor: EditorCore,
+	elementId?: string,
+): { trackId: string; element: TimelineElement } {
+	if (elementId) {
+		return findElementById(editor, elementId);
+	}
+	const selected = editor.selection.getSelectedElements();
+	for (const item of selected) {
+		try {
+			const found = findElementById(editor, item.elementId);
+			if (found.element.type === "audio" || found.element.type === "video") {
+				return found;
+			}
+		} catch {
+			// ignore
+		}
+	}
+	const scene = editor.scenes.getActiveSceneOrNull();
+	if (!scene) throw new Error("No active scene");
+	const allTracks = [
+		scene.tracks.main,
+		...scene.tracks.audio,
+		...scene.tracks.overlay,
+	];
+	for (const track of allTracks) {
+		const el = track.elements.find(
+			(e) => e.type === "audio" || e.type === "video",
+		);
+		if (el) return { trackId: track.id, element: el };
+	}
+	throw new Error("No audio or video clip found on the timeline to enhance.");
 }
 
 function serializeElement(editor: EditorCore, element: TimelineElement) {
@@ -679,6 +737,105 @@ export const aiTools: AiToolDefinition[] = [
 				updates: [{ trackId, elementId, patch: { params: params as any } }],
 			});
 			return { ok: true, elementId, updatedParams: params };
+		},
+	},
+	{
+		name: "enhance_audio",
+		description:
+			"Enhance audio quality, speech clarity, and dynamic range for an audio or video clip using Web Audio DSP. Applies high-pass rumble filtering (85Hz), vocal presence boost (+4.5dB at 3.4kHz), de-mudding (-3dB at 320Hz), and dynamics compression.",
+		parameters: {
+			type: "object",
+			properties: {
+				elementId: {
+					type: "string",
+					description:
+						"Optional ID of the audio or video element. If omitted, enhances the currently selected clip or the first audio/video clip on the timeline.",
+				},
+				noiseReduction: {
+					type: "boolean",
+					description:
+						"Whether to enable background noise and rumble reduction (default: true)",
+				},
+				vocalBoost: {
+					type: "boolean",
+					description:
+						"Whether to enable vocal clarity presence boost (default: true)",
+				},
+			},
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const elementIdArg = optionalString(args, "elementId");
+			const noiseReduction = optionalBoolean(args, "noiseReduction") ?? true;
+			const vocalBoost = optionalBoolean(args, "vocalBoost") ?? true;
+
+			const { trackId, element } = findAudioCapableElement(editor, elementIdArg);
+			const newParams = {
+				...element.params,
+				enhanceAudio: true,
+				noiseReduction,
+				vocalBoost,
+			};
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId,
+						elementId: element.id,
+						patch: { params: newParams as any },
+					},
+				],
+			});
+			return {
+				ok: true,
+				elementId: element.id,
+				elementName: element.name,
+				enhanced: true,
+				noiseReduction,
+				vocalBoost,
+				message: `Successfully enhanced audio for "${element.name}" with vocal clarity boost and noise reduction.`,
+			};
+		},
+	},
+	{
+		name: "remove_background_noise",
+		description:
+			"Remove background noise, microphone hiss, air conditioner / fan noise, and low-frequency room hum from an audio or video clip using client-side Web Audio DSP filtering.",
+		parameters: {
+			type: "object",
+			properties: {
+				elementId: {
+					type: "string",
+					description:
+						"Optional ID of the audio or video element. If omitted, denoises the currently selected clip or the first audio/video clip on the timeline.",
+				},
+			},
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const elementIdArg = optionalString(args, "elementId");
+			const { trackId, element } = findAudioCapableElement(editor, elementIdArg);
+			const newParams = {
+				...element.params,
+				enhanceAudio: true,
+				noiseReduction: true,
+				vocalBoost: true,
+			};
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId,
+						elementId: element.id,
+						patch: { params: newParams as any },
+					},
+				],
+			});
+			return {
+				ok: true,
+				elementId: element.id,
+				elementName: element.name,
+				noiseReduction: true,
+				message: `Successfully removed background noise and enabled studio enhancement on "${element.name}".`,
+			};
 		},
 	},
 	{

@@ -8,6 +8,7 @@ import {
 	hasAnimatedVolume,
 } from "@/timeline/audio-state";
 import { createAudioMasteringChain } from "@/media/audio-mastering";
+import { createAudioEnhancerChain } from "@/media/audio-enhancer";
 import {
 	getClipTimeAtSourceTime,
 	getSourceTimeAtClipTime,
@@ -380,7 +381,33 @@ export class AudioManager {
 		const node = audioContext.createBufferSource();
 		node.buffer = buffer;
 		const clipGain = audioContext.createGain();
-		node.connect(clipGain);
+
+		const params = clip.timelineElement.params ?? {};
+		const isEnhanced =
+			params.enhanceAudio === true ||
+			params.noiseReduction === true ||
+			params.vocalBoost === true;
+
+		let cleanupEnhancer: (() => void) | undefined;
+
+		if (isEnhanced) {
+			const enhancer = createAudioEnhancerChain({
+				audioContext,
+				destination: clipGain,
+				config: {
+					noiseReduction: params.noiseReduction !== false,
+					vocalBoost: params.vocalBoost !== false,
+				},
+			});
+			node.connect(enhancer.input);
+			cleanupEnhancer = () => {
+				enhancer.input.disconnect();
+				enhancer.output.disconnect();
+			};
+		} else {
+			node.connect(clipGain);
+		}
+
 		clipGain.connect(this.masterGain ?? audioContext.destination);
 
 		const startTimestamp =
@@ -411,6 +438,7 @@ export class AudioManager {
 		this.queuedSources.add(node);
 		node.addEventListener("ended", () => {
 			node.disconnect();
+			cleanupEnhancer?.();
 			clipGain.disconnect();
 			this.queuedSources.delete(node);
 		});

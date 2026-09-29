@@ -40,7 +40,7 @@ import remarkGfm from "remark-gfm";
 const QUICK_ACTIONS = [
 	{ label: "Scan Timeline", prompt: "Inspect the timeline and summarize all clips, text, and tracks." },
 	{ label: "Split at Playhead", prompt: "Split the clip at the current playhead position." },
-	{ label: "Add Title Text", prompt: "Add a text title 'AmberCut Video' at the current playhead." },
+	{ label: "Clean & Denoise Audio", prompt: "Enhance the audio quality and remove background noise for the clips on the timeline." },
 	{ label: "Mute Audio", prompt: "Mute all audio tracks on the timeline." },
 	{ label: "Speed Up 1.5x", prompt: "Increase playback speed to 1.5x for selected elements." },
 	{ label: "Add Blur", prompt: "Apply a blur effect to the current video clip." },
