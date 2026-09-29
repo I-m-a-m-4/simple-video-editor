@@ -18,12 +18,13 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     env:
       DATABASE_URL: "postgresql://opencut:opencut@localhost:5432/opencut"
-      BETTER_AUTH_SECRET: "supersecret"
+      BETTER_AUTH_SECRET: "ci_build_secret_key_32_characters_minimum"
       NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
       UPSTASH_REDIS_REST_URL: "https://your-upstash-redis-url"
       UPSTASH_REDIS_REST_TOKEN: "your-upstash-redis-token"
@@ -31,6 +32,7 @@ jobs:
       MARBLE_WORKSPACE_KEY: "placeholder"
       FREESOUND_CLIENT_ID: "placeholder"
       FREESOUND_API_KEY: "placeholder"
+      NEXT_PUBLIC_GROQ_API_KEY: ""
     
     steps:
       - name: Checkout repository
@@ -57,7 +59,7 @@ jobs:
         run: wasm-pack build rust/wasm --target bundler --out-dir pkg
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.18
 
@@ -65,17 +67,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-1.2.18-${{ hashFiles('apps/web/bun.lock') }}
+          key: ${{ runner.os }}-bun-1.2.18-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        working-directory: apps/web
         run: bun install
 
       - name: Build
-        working-directory: apps/web
-        run: bun run build
+        run: bun run build:web
 
       - name: Run tests
-        working-directory: apps/web
-        run: echo "No tests implemented yet"
+        run: bun test
         continue-on-error: true
