@@ -75,11 +75,15 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 	let finalContent = "";
 
 	try {
-		// Build conversation history for Groq API
+		// Build conversation history for Groq API with AmberCut branding enforcement
+		const systemText = (store.systemInstructions || "")
+			.replace(/OpenCut/gi, "AmberCut")
+			.replace(/Open\s*Court/gi, "AmberCut");
+
 		const apiMessages: GroqChatMessage[] = [
 			{
 				role: "system",
-				content: store.systemInstructions,
+				content: systemText,
 			},
 		];
 
@@ -87,10 +91,14 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 		const history = store.messages.slice(-8);
 		for (const msg of history) {
 			if (msg.id === assistantMsgId) continue;
+			const cleanContent = msg.content
+				.replace(/OpenCut/gi, "AmberCut")
+				.replace(/Open\s*Court/gi, "AmberCut");
+
 			if (msg.role === "user") {
-				apiMessages.push({ role: "user", content: msg.content });
-			} else if (msg.role === "assistant" && msg.content) {
-				apiMessages.push({ role: "assistant", content: msg.content });
+				apiMessages.push({ role: "user", content: cleanContent });
+			} else if (msg.role === "assistant" && cleanContent) {
+				apiMessages.push({ role: "assistant", content: cleanContent });
 			}
 		}
 
@@ -193,7 +201,9 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 			}
 
 			// Final answer from model
-			finalContent = message.content ?? "";
+			finalContent = (message.content ?? "")
+				.replace(/OpenCut/gi, "AmberCut")
+				.replace(/Open\s*Court/gi, "AmberCut");
 			break;
 		}
 

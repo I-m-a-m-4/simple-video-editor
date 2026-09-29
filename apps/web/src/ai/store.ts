@@ -32,14 +32,16 @@ interface AiState extends AiSettings {
 }
 
 const DEFAULT_SYSTEM_INSTRUCTIONS = `You are AmberCut AI, an expert agentic video editing assistant built directly into the AmberCut editor.
+Your identity and name is AmberCut AI. Never refer to yourself as OpenCut or Open Court.
 You have direct programmatic control over the video project via tools.
 
 Rules & Guidelines:
-1. When asked to perform edits or answer questions about the video, ALWAYS start by inspecting the project with \`get_timeline_state\` unless you already have fresh timeline data.
-2. If the user asks to add footage or audio, check \`list_media_assets\` to find available asset IDs before adding them.
-3. Be proactive and perform multi-step workflows when appropriate (e.g. split a clip, adjust its volume, add text above it).
-4. After completing an edit or a chain of edits, explain clearly and concisely what changes you made.
-5. All times are measured in seconds. Use accurate decimal values when needed.`;
+1. Always introduce and refer to yourself as AmberCut AI.
+2. When asked to perform edits or answer questions about the video, ALWAYS start by inspecting the project with \`get_timeline_state\` unless you already have fresh timeline data.
+3. If the user asks to add footage or audio, check \`list_media_assets\` to find available asset IDs before adding them.
+4. Be proactive and perform multi-step workflows when appropriate (e.g. split a clip, adjust its volume, add text above it).
+5. After completing an edit or a chain of edits, explain clearly and concisely what changes you made.
+6. All times are measured in seconds. Use accurate decimal values when needed.`;
 
 export const DEFAULT_GROQ_KEY =
 	process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
@@ -71,15 +73,31 @@ export const useAiStore = create<AiState>()(
 			setSystemInstructions: (systemInstructions) => set({ systemInstructions }),
 			addMessage: (message) => {
 				set((state) => {
-					const newMessages = [...state.messages, message];
+					const sanitizedMsg: AiChatItem = {
+						...message,
+						content: message.content
+							.replace(/OpenCut/gi, "AmberCut")
+							.replace(/Open\s*Court/gi, "AmberCut"),
+					};
+					const newMessages = [...state.messages, sanitizedMsg];
 					debouncedSync(state.projectId, newMessages);
 					return { messages: newMessages };
 				});
 			},
 			updateMessage: (id, patch) => {
 				set((state) => {
+					const sanitizedPatch: Partial<AiChatItem> = {
+						...patch,
+						...(patch.content !== undefined
+							? {
+									content: patch.content
+										.replace(/OpenCut/gi, "AmberCut")
+										.replace(/Open\s*Court/gi, "AmberCut"),
+								}
+							: {}),
+					};
 					const newMessages = state.messages.map((m) =>
-						m.id === id ? { ...m, ...patch } : m,
+						m.id === id ? { ...m, ...sanitizedPatch } : m,
 					);
 					// Only sync when a message is finalized (not pending)
 					const updated = newMessages.find((m) => m.id === id);
@@ -110,25 +128,41 @@ export const useAiStore = create<AiState>()(
 			loadFromFirebase: async (projectId: string) => {
 				const loaded = await loadChatMessages(projectId);
 				if (loaded.length > 0) {
-					set({ messages: loaded, projectId });
+					const sanitized = loaded.map((m) => ({
+						...m,
+						content: m.content
+							.replace(/OpenCut/gi, "AmberCut")
+							.replace(/Open\s*Court/gi, "AmberCut"),
+					}));
+					set({ messages: sanitized, projectId });
 				} else {
 					set({ projectId });
 				}
 			},
 		}),
 		{
-			name: "opencut-ai-settings",
-			version: 1,
+			name: "ambercut-ai-settings",
+			version: 2,
 			migrate: (persistedState: unknown) => {
 				const state = persistedState as Partial<AiState>;
-				if (state && (state.model === "llama-3.3-70b-versatile" || !state.model)) {
-					state.model = DEFAULT_GROQ_MODEL;
+				if (state) {
+					if (state.model === "llama-3.3-70b-versatile" || !state.model) {
+						state.model = DEFAULT_GROQ_MODEL;
+					}
+					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {
+						state.systemInstructions = DEFAULT_SYSTEM_INSTRUCTIONS;
+					}
 				}
 				return state;
 			},
 			onRehydrateStorage: () => (state) => {
-				if (state && (state.model === "llama-3.3-70b-versatile" || !state.model)) {
-					state.setModel(DEFAULT_GROQ_MODEL);
+				if (state) {
+					if (state.model === "llama-3.3-70b-versatile" || !state.model) {
+						state.setModel(DEFAULT_GROQ_MODEL);
+					}
+					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {
+						state.setSystemInstructions(DEFAULT_SYSTEM_INSTRUCTIONS);
+					}
 				}
 			},
 			partialize: (state) => ({
