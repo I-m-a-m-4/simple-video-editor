@@ -70,6 +70,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_EXPORT: "true"
+          NODE_ENV: production
+          NEXT_PUBLIC_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || '' }}
+          NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
+          NEXT_PUBLIC_MARBLE_API_URL: "https://api.marblecms.com"
+          DATABASE_URL: "postgresql://opencut:opencut@localhost:5432/opencut"
+          BETTER_AUTH_SECRET: "ci_build_secret_key_32_characters_minimum"
+          UPSTASH_REDIS_REST_URL: "http://localhost:8079"
+          UPSTASH_REDIS_REST_TOKEN: "example_token"
+          MARBLE_WORKSPACE_KEY: "dummy_key"
+          FREESOUND_CLIENT_ID: "dummy_id"
+          FREESOUND_API_KEY: "dummy_key"
         with:
           tagName: v__VERSION__
           releaseName: 'AmberCut v__VERSION__'
