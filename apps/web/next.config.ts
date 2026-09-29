@@ -64,6 +64,8 @@ const nextConfig: NextConfig = {
 // Next.js supports async config exports natively, so we resolve it first,
 // then wrap with withBotId which expects a synchronous NextConfig.
 export default async function config(): Promise<NextConfig> {
-  const withCollections = await withContentCollections(nextConfig);
-  return withBotId(withCollections as NextConfig);
+  // Use `as any` to bypass structural type checking errors in CI caused by 
+  // duplicate/hoisted Next.js types between root and workspace node_modules
+  const withCollections = await withContentCollections(nextConfig as any);
+  return withBotId(withCollections as any) as NextConfig;
 }
