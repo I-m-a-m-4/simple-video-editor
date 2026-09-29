@@ -44,7 +44,7 @@ export function Footer() {
 								alt="AmberCut"
 								width={24}
 								height={24}
-								className="invert dark:invert-0"
+								className="rounded-md"
 							/>
 							<span className="text-lg font-bold">AmberCut</span>
 						</div>

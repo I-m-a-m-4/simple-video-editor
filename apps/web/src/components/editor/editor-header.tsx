@@ -114,10 +114,10 @@ function ProjectDropdown() {
 					<Button variant="ghost" size="icon" className="p-1 rounded-sm size-8">
 						<Image
 							src={DEFAULT_LOGO_URL}
-							alt="Project thumbnail"
+							alt="AmberCut"
 							width={32}
 							height={32}
-							className="invert dark:invert-0 size-5"
+							className="size-5 rounded-sm"
 						/>
 					</Button>
 				</DropdownMenuTrigger>

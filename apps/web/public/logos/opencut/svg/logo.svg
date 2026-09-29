@@ -1,10 +1,46 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g clip-path="url(#clip0_10_2)">
-<path d="M32 9.37305V22.627L22.627 32H9.37305L0 22.627V9.37305L9.37305 0H22.627L32 9.37305ZM8 8V24H24V8H8Z" fill="white"/>
-</g>
-<defs>
-<clipPath id="clip0_10_2">
-<rect width="32" height="32" fill="white"/>
-</clipPath>
-</defs>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="amber-gradient" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF7A1A"/>
+      <stop offset="50%" stop-color="#F95400"/>
+      <stop offset="100%" stop-color="#DC3B00"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- Orange Squircle Container -->
+  <rect width="512" height="512" rx="116" fill="url(#amber-gradient)"/>
+
+  <!-- AmberCut Distinctive White Mark -->
+  <g >
+    <!-- Main Left Stem & Crown of 'A' -->
+    <path d="M 256 94
+             L 124 382
+             H 194
+             L 226 310
+             H 270
+             L 288 270
+             H 208
+             L 256 164
+             L 284 224
+             L 312 168
+             L 256 94 Z"
+          fill="#FFFFFF"
+          fill-rule="evenodd"/>
+
+    <!-- Right Stem with Razor Film Cut -->
+    <path d="M 330 212
+             L 286 298
+             H 318
+             L 354 382
+             H 424
+             L 358 230
+             L 330 212 Z"
+          fill="#FFFFFF"/>
+
+    <!-- Center Play / Slice Wedge -->
+    <polygon points="232,278 328,326 232,374 252,326" fill="#FFFFFF"/>
+  </g>
 </svg>
