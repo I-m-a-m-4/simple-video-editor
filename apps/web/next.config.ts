@@ -2,14 +2,17 @@ import type { NextConfig } from "next";
 import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
+const isExport = process.env.TAURI_EXPORT === "true" || process.env.TAURI_ENV_PLATFORM !== undefined;
+
 const nextConfig: NextConfig = {
 	compiler: {
 		removeConsole: process.env.NODE_ENV === "production",
 	},
 	reactStrictMode: true,
 	productionBrowserSourceMaps: true,
-	output: process.env.STANDALONE ? "standalone" : undefined,
+	output: isExport ? "export" : (process.env.STANDALONE ? "standalone" : undefined),
 	images: {
+		unoptimized: isExport,
 		remotePatterns: [
 			{
 				protocol: "https",

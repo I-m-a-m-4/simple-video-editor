@@ -6,6 +6,9 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "turbo run dev --filter=@opencut/web",
+    "build": "turbo run build --filter=@opencut/web",
+    "start": "turbo run start --filter=@opencut/web",
     "build:tools": "turbo run build --filter=@opencut/tools",
     "build:wasm": "wasm-pack build rust/wasm --target bundler --out-dir pkg",
     "build:web": "turbo run build --filter=@opencut/web",

@@ -22,7 +22,7 @@ interface AiState extends AiSettings {
 	setActiveToolName: (toolName: string | null) => void;
 }
 
-const DEFAULT_SYSTEM_INSTRUCTIONS = `You are OpenCut AI, an expert agentic video editing assistant built directly into the OpenCut editor.
+const DEFAULT_SYSTEM_INSTRUCTIONS = `You are AmberCut AI, an expert agentic video editing assistant built directly into the AmberCut editor.
 You have direct programmatic control over the video project via tools.
 
 Rules & Guidelines:
@@ -32,10 +32,13 @@ Rules & Guidelines:
 4. After completing an edit or a chain of edits, explain clearly and concisely what changes you made.
 5. All times are measured in seconds. Use accurate decimal values when needed.`;
 
+export const DEFAULT_GROQ_KEY =
+	process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+
 export const useAiStore = create<AiState>()(
 	persist(
 		(set) => ({
-			apiKey: "",
+			apiKey: DEFAULT_GROQ_KEY,
 			model: DEFAULT_GROQ_MODEL,
 			systemInstructions: DEFAULT_SYSTEM_INSTRUCTIONS,
 			messages: [],
@@ -59,6 +62,19 @@ export const useAiStore = create<AiState>()(
 		}),
 		{
 			name: "opencut-ai-settings",
+			version: 1,
+			migrate: (persistedState: unknown) => {
+				const state = persistedState as Partial<AiState>;
+				if (state && (state.model === "llama-3.3-70b-versatile" || !state.model)) {
+					state.model = DEFAULT_GROQ_MODEL;
+				}
+				return state;
+			},
+			onRehydrateStorage: () => (state) => {
+				if (state && (state.model === "llama-3.3-70b-versatile" || !state.model)) {
+					state.setModel(DEFAULT_GROQ_MODEL);
+				}
+			},
 			partialize: (state) => ({
 				apiKey: state.apiKey,
 				model: state.model,

@@ -29,6 +29,10 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 	const trimmedPrompt = prompt.trim();
 	if (!trimmedPrompt) return;
 
+	if (store.model === "llama-3.3-70b-versatile") {
+		store.setModel("openai/gpt-oss-120b");
+	}
+
 	if (!store.apiKey) {
 		const userMsgId = generateId();
 		store.addMessage({

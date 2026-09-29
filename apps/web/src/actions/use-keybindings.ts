@@ -51,6 +51,19 @@ export function useKeybindingsListener() {
 				return;
 			}
 
+			if (boundAction === "copy-selected") {
+				const selection = window.getSelection();
+				if (selection && !selection.isCollapsed && selection.toString().length > 0) {
+					return;
+				}
+				if (
+					editor.selection.getSelectedElements().length === 0 &&
+					editor.selection.getSelectedKeyframes().length === 0
+				) {
+					return;
+				}
+			}
+
 			ev.preventDefault();
 
 			switch (boundAction) {

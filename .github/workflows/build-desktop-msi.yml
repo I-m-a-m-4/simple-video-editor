@@ -1,0 +1,88 @@
+name: Build Desktop MSI & Windows Installer
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-tauri-windows:
+    name: Build Windows MSI & NSIS via Tauri
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.18
+
+      - name: Setup Node.js (for Tauri CLI & tooling)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust dependencies & build WASM
+        run: |
+          wasm-pack build rust/wasm --target bundler --out-dir pkg
+
+      - name: Install Root & Web Dependencies
+        run: |
+          bun install
+
+      - name: Build Web Application (Static Export for Tauri)
+        env:
+          NEXT_PUBLIC_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || '' }}
+          TAURI_EXPORT: "true"
+          NODE_ENV: production
+          NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
+          NEXT_PUBLIC_MARBLE_API_URL: "https://api.marblecms.com"
+          DATABASE_URL: "postgresql://opencut:opencut@localhost:5432/opencut"
+          BETTER_AUTH_SECRET: "ci_build_secret_key_32_characters_minimum"
+          UPSTASH_REDIS_REST_URL: "http://localhost:8079"
+          UPSTASH_REDIS_REST_TOKEN: "example_token"
+          MARBLE_WORKSPACE_KEY: "dummy_key"
+          FREESOUND_CLIENT_ID: "dummy_id"
+          FREESOUND_API_KEY: "dummy_key"
+        run: |
+          bun run build:web
+
+      - name: Build Tauri Desktop (MSI & NSIS Bundles)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'AmberCut v__VERSION__'
+          releaseBody: 'Automated release for AmberCut with Groq AI Agentic Copilot and Windows MSI & NSIS bundles.'
+          releaseDraft: false
+          prerelease: false
+          args: --bundles msi,nsis
+
+      - name: Upload Windows MSI & Setup Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambercut-windows-installers
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: warn
