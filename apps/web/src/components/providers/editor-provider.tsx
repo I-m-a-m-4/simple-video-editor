@@ -10,6 +10,7 @@ import { useKeybindingsStore } from "@/actions/keybindings-store";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditorActions } from "@/actions/use-editor-actions";
 import { loadFontAtlas } from "@/fonts/google-fonts";
+import { useAiChatSync } from "@/ai/use-ai-chat-sync";
 import {
 	initializeGpuRenderer,
 	isGpuAvailable,
@@ -150,5 +151,6 @@ function EditorRuntimeBindings() {
 
 	useEditorActions();
 	useKeybindingsListener();
+	useAiChatSync();
 	return null;
 }

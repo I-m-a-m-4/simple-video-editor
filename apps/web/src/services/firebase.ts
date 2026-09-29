@@ -1,0 +1,136 @@
+import { initializeApp, getApps } from "firebase/app";
+import {
+	getFirestore,
+	collection,
+	doc,
+	setDoc,
+	getDocs,
+	deleteDoc,
+	query,
+	orderBy,
+	writeBatch,
+	serverTimestamp,
+	type Firestore,
+} from "firebase/firestore";
+import type { AiChatItem } from "@/ai/types";
+
+const firebaseConfig = {
+	apiKey: "AIzaSyB3wk_oEB9ON7gO9KRoZFHLAMxTJ-2RRAw",
+	authDomain: "ambercut-d07ef.firebaseapp.com",
+	projectId: "ambercut-d07ef",
+	storageBucket: "ambercut-d07ef.firebasestorage.app",
+	messagingSenderId: "993266770263",
+	appId: "1:993266770263:web:18ee2786eac68d9b1a9e12",
+	measurementId: "G-YHRVLB5RB0",
+};
+
+// Initialize Firebase only once
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const db: Firestore = getFirestore(app);
+
+/**
+ * Returns the Firestore collection path for chat messages of a given project.
+ * Structure: projects/{projectId}/chat_messages
+ */
+function chatCollection(projectId: string) {
+	return collection(db, "projects", projectId, "chat_messages");
+}
+
+/**
+ * Save all chat messages for a project to Firestore.
+ * Replaces the entire conversation — simple and reliable.
+ */
+export async function saveChatMessages(
+	projectId: string,
+	messages: AiChatItem[],
+): Promise<void> {
+	if (!projectId) return;
+
+	try {
+		const colRef = chatCollection(projectId);
+
+		// Delete existing messages first
+		const existingDocs = await getDocs(colRef);
+		if (!existingDocs.empty) {
+			const batch = writeBatch(db);
+			for (const docSnap of existingDocs.docs) {
+				batch.delete(docSnap.ref);
+			}
+			await batch.commit();
+		}
+
+		// Write new messages with ordering index
+		const batch = writeBatch(db);
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			// Skip pending messages — they are incomplete
+			if (msg.pending) continue;
+
+			const docRef = doc(colRef, msg.id);
+			batch.set(docRef, {
+				id: msg.id,
+				role: msg.role,
+				content: msg.content,
+				toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+				order: i,
+				updatedAt: serverTimestamp(),
+			});
+		}
+		await batch.commit();
+	} catch (err) {
+		console.error("[Firebase] Failed to save chat messages:", err);
+	}
+}
+
+/**
+ * Load chat messages for a project from Firestore.
+ * Returns an empty array if no messages are stored.
+ */
+export async function loadChatMessages(
+	projectId: string,
+): Promise<AiChatItem[]> {
+	if (!projectId) return [];
+
+	try {
+		const colRef = chatCollection(projectId);
+		const q = query(colRef, orderBy("order", "asc"));
+		const snapshot = await getDocs(q);
+
+		return snapshot.docs.map((docSnap) => {
+			const data = docSnap.data();
+			return {
+				id: data.id as string,
+				role: data.role as AiChatItem["role"],
+				content: data.content as string,
+				toolCalls: data.toolCalls ? JSON.parse(data.toolCalls) : undefined,
+				pending: false,
+			};
+		});
+	} catch (err) {
+		console.error("[Firebase] Failed to load chat messages:", err);
+		return [];
+	}
+}
+
+/**
+ * Clear all chat messages for a project in Firestore.
+ */
+export async function clearChatMessages(projectId: string): Promise<void> {
+	if (!projectId) return;
+
+	try {
+		const colRef = chatCollection(projectId);
+		const snapshot = await getDocs(colRef);
+		if (!snapshot.empty) {
+			const batch = writeBatch(db);
+			for (const docSnap of snapshot.docs) {
+				batch.delete(docSnap.ref);
+			}
+			await batch.commit();
+		}
+	} catch (err) {
+		console.error("[Firebase] Failed to clear chat messages:", err);
+	}
+}
+
+export { db };
