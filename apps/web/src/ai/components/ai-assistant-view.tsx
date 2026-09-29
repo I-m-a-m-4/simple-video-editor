@@ -34,11 +34,13 @@ import { useAiStore } from "../store";
 import { sendAiPrompt, stopAiGeneration } from "../agent";
 import { GROQ_MODELS, type AiToolExecution } from "../types";
 import { cn } from "@/utils/ui";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const QUICK_ACTIONS = [
 	{ label: "Scan Timeline", prompt: "Inspect the timeline and summarize all clips, text, and tracks." },
 	{ label: "Split at Playhead", prompt: "Split the clip at the current playhead position." },
-	{ label: "Add Title Text", prompt: "Add a text title 'OpenCut Video' at the current playhead." },
+	{ label: "Add Title Text", prompt: "Add a text title 'AmberCut Video' at the current playhead." },
 	{ label: "Mute Audio", prompt: "Mute all audio tracks on the timeline." },
 	{ label: "Speed Up 1.5x", prompt: "Increase playback speed to 1.5x for selected elements." },
 	{ label: "Add Blur", prompt: "Apply a blur effect to the current video clip." },
@@ -238,7 +240,7 @@ export function AiAssistantView() {
 							>
 								{/* Role Label */}
 								<span className="text-[10px] text-muted-foreground px-1">
-									{msg.role === "user" ? "You" : "OpenCut AI"}
+									{msg.role === "user" ? "You" : "AmberCut AI"}
 								</span>
 
 								{/* Message Content */}
@@ -271,7 +273,7 @@ export function AiAssistantView() {
 
 									{/* Main text message */}
 									{msg.content ? (
-										<div className="whitespace-pre-wrap select-text">{msg.content}</div>
+										<AiMessageMarkdown content={msg.content} isUser={msg.role === "user"} />
 									) : msg.pending ? (
 										<div className="flex items-center gap-2 text-muted-foreground py-1">
 											<Sparkles className="size-3 animate-spin text-primary" />
@@ -388,3 +390,57 @@ function ToolExecutionBadge({
 		</div>
 	);
 }
+
+function AiMessageMarkdown({ content, isUser }: { content: string; isUser: boolean }) {
+	if (isUser) {
+		return <div className="whitespace-pre-wrap select-text">{content}</div>;
+	}
+
+	return (
+		<div className="select-text space-y-2 text-xs leading-relaxed overflow-hidden">
+			<ReactMarkdown
+				remarkPlugins={[remarkGfm]}
+				components={{
+					h1: ({ children }) => <h1 className="text-sm font-bold text-foreground mt-3 mb-1.5">{children}</h1>,
+					h2: ({ children }) => <h2 className="text-xs font-bold text-foreground mt-2.5 mb-1 flex items-center gap-1.5">{children}</h2>,
+					h3: ({ children }) => <h3 className="text-xs font-semibold text-foreground mt-2 mb-1">{children}</h3>,
+					p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+					ul: ({ children }) => <ul className="list-disc pl-4 space-y-1 mb-2 text-foreground/90">{children}</ul>,
+					ol: ({ children }) => <ol className="list-decimal pl-4 space-y-1 mb-2 text-foreground/90">{children}</ol>,
+					li: ({ children }) => <li className="leading-snug">{children}</li>,
+					hr: () => <hr className="my-2.5 border-border/50" />,
+					strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+					em: ({ children }) => <em className="italic">{children}</em>,
+					code: ({ inline, className, children, ...props }: any) =>
+						inline ? (
+							<code className="rounded bg-background/80 px-1 py-0.5 font-mono text-[11px] text-primary border border-border/50">
+								{children}
+							</code>
+						) : (
+							<pre className="overflow-x-auto rounded bg-background/90 p-2 my-1.5 font-mono text-[11px] border border-border/50">
+								<code>{children}</code>
+							</pre>
+						),
+					table: ({ children }) => (
+						<div className="overflow-x-auto my-2 rounded border border-border/60 bg-background/60 shadow-sm">
+							<table className="w-full text-[11px] text-left border-collapse">{children}</table>
+						</div>
+					),
+					thead: ({ children }) => <thead className="bg-muted/60 border-b border-border/60 text-foreground font-semibold">{children}</thead>,
+					tbody: ({ children }) => <tbody className="divide-y divide-border/40">{children}</tbody>,
+					tr: ({ children }) => <tr className="hover:bg-muted/30 transition-colors">{children}</tr>,
+					th: ({ children }) => <th className="px-2.5 py-1.5 font-semibold text-foreground">{children}</th>,
+					td: ({ children }) => <td className="px-2.5 py-1.5 text-foreground/90 align-top">{children}</td>,
+					a: ({ href, children }) => (
+						<a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+							{children}
+						</a>
+					),
+				}}
+			>
+				{content}
+			</ReactMarkdown>
+		</div>
+	);
+}
+
