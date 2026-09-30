@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url("https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&display=swap");
 
 /* Local-first Clash Display fallback with system priority */
 @font-face {

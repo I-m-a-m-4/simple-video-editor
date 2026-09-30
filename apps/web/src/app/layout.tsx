@@ -33,6 +33,10 @@ export default function RootLayout({
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<head>
+				<link
+					rel="stylesheet"
+					href="https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&display=swap"
+				/>
 				<BotIdClient protect={protectedRoutes} />
 				{process.env.NODE_ENV === "development" && (
 					<>
