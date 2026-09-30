@@ -20,6 +20,7 @@ import {
 	ContextMenuItem,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { toast } from "sonner";
 import { useTimelineZoom } from "@/timeline/hooks/use-timeline-zoom";
 import {
 	useCallback,
@@ -866,6 +867,16 @@ function TimelineTrackRows({
 							{canTrackBeHidden(track) && track.hidden
 								? "Show track"
 								: "Hide track"}
+						</ContextMenuItem>
+						<ContextMenuItem
+							icon={<HugeiconsIcon icon={MusicNote03Icon} />}
+							onClick={(event: React.MouseEvent) => {
+								event.stopPropagation();
+								timeline.addTrack({ type: "audio" });
+								toast.success("Added new audio track to timeline");
+							}}
+						>
+							Add audio track
 						</ContextMenuItem>
 						{track.id !== mainTrackId && (
 							<ContextMenuItem

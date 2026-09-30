@@ -15,6 +15,7 @@ import { DeleteProjectDialog } from "@/project/components/delete-project-dialog"
 import { useRouter } from "next/navigation";
 import { FaDiscord } from "react-icons/fa6";
 import { ExportButton } from "./export-button";
+import { ProButton } from "./pro-button";
 import { FeedbackPopover } from "@/feedback/components/feedback-popover";
 import { ThemeToggle } from "../theme-toggle";
 import { DEFAULT_LOGO_URL } from "@/site/brand";
@@ -35,6 +36,7 @@ export function EditorHeader() {
 				<EditableProjectName />
 			</div>
 			<nav className="flex items-center gap-2">
+				<ProButton />
 				<FeedbackPopover />
 				<ExportButton />
 				<ThemeToggle />

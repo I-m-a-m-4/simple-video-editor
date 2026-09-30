@@ -43,8 +43,10 @@ import {
 	Layers01Icon,
 	Chart03Icon,
 	Unlink02Icon,
+	MusicNote03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { toast } from "sonner";
 import { OcRippleIcon } from "@/components/icons";
 import { GraphEditorPopover } from "./graph-editor/popover";
 import { PopoverTrigger } from "@/components/ui/popover";
@@ -199,6 +201,16 @@ function ToolbarLeftSection() {
 				/>
 
 				<div className="bg-border mx-1 h-6 w-px" />
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={MusicNote03Icon} className="text-amber-400" />}
+					tooltip="Add Audio Track (+ Audio)"
+					onClick={({ event }) => {
+						event.stopPropagation();
+						editor.timeline.addTrack({ type: "audio" });
+						toast.success("Added new audio track to timeline");
+					}}
+				/>
 
 				<Tooltip>
 					<ToolbarButton

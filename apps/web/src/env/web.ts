@@ -26,6 +26,11 @@ const webEnvSchema = z.object({
 	MARBLE_WORKSPACE_KEY: z.string().default("your_workspace_key_here"),
 	FREESOUND_CLIENT_ID: z.string().default("your_client_id_here"),
 	FREESOUND_API_KEY: z.string().default("your_api_key_here"),
+
+	// Flutterwave
+	NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY: z.string().optional(),
+	FLUTTERWAVE_SECRET_KEY: z.string().optional(),
+	FLUTTERWAVE_ENCRYPTION_KEY: z.string().optional(),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;
