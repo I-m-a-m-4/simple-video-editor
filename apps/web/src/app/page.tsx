@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default async function Home() {
 	return (
-		<div className="min-h-screen bg-background text-foreground flex flex-col">
+		<div className="min-h-screen bg-background text-foreground flex flex-col homepage font-jakarta">
 			<Header />
 			<main className="flex-1">
 				<Hero />

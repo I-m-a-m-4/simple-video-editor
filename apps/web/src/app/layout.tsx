@@ -7,9 +7,14 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { baseMetaData } from "./metadata";
 import { BotIdClient } from "botid/client";
 import { webEnv } from "@/env/web";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 
-const siteFont = Inter({ subsets: ["latin"] });
+const siteFont = Plus_Jakarta_Sans({
+	subsets: ["latin"],
+	variable: "--font-plus-jakarta",
+	weight: ["300", "400", "500", "600", "700", "800"],
+	display: "swap",
+});
 
 export const metadata = baseMetaData;
 
@@ -39,7 +44,7 @@ export default function RootLayout({
 					</>
 				)}
 			</head>
-			<body className={`${siteFont.className} font-sans antialiased`}>
+			<body className={`${siteFont.variable} ${siteFont.className} font-sans antialiased`}>
 				<ThemeProvider
 					attribute="class"
 					defaultTheme="system"

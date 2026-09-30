@@ -1,4 +1,18 @@
 @import "tailwindcss";
+@import url("https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&display=swap");
+
+/* Local-first Clash Display fallback with system priority */
+@font-face {
+  font-family: "Clash Display";
+  src: local("Clash Display"),
+       local("ClashDisplay-Variable"),
+       local("ClashDisplay-Bold"),
+       local("ClashDisplay-Semibold"),
+       local("ClashDisplay-Medium"),
+       local("ClashDisplay-Regular");
+  font-weight: 200 700;
+  font-display: swap;
+}
 
 /* Custom variant for dark mode */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -150,7 +164,10 @@
   --breakpoint-xs: 30rem;
 
   /* Typography */
-  --font-sans: var(--font-inter), sans-serif;
+  --font-sans: var(--font-plus-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-jakarta: var(--font-plus-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Clash Display", sans-serif;
+  --font-clash: "Clash Display", sans-serif;
 
   /* Font sizes */
   --text-xs: 0.72rem;
@@ -288,4 +305,40 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@utility font-clash {
+  font-family: "Clash Display", sans-serif;
+}
+
+@utility font-jakarta {
+  font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
+}
+
+@utility font-display {
+  font-family: "Clash Display", sans-serif;
+}
+
+/* Homepage Typography styling */
+.homepage,
+.landing-page {
+  font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
+}
+
+.homepage h1,
+.homepage h2,
+.homepage h3,
+.homepage h4,
+.homepage h5,
+.homepage h6,
+.homepage .font-clash,
+.landing-page h1,
+.landing-page h2,
+.landing-page h3,
+.landing-page h4,
+.landing-page h5,
+.landing-page h6,
+.landing-page .font-clash {
+  font-family: "Clash Display", sans-serif;
+  letter-spacing: -0.02em;
 }
