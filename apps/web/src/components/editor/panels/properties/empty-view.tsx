@@ -385,18 +385,18 @@ export function EmptyView() {
 
 						{/* Pro banner inside details */}
 						{!isPro && (
-							<div className="rounded-xl bg-gradient-to-br from-purple-950/60 to-indigo-950/60 border border-purple-500/30 p-3.5 text-center space-y-2">
-								<Crown className="size-6 text-amber-300 mx-auto" />
-								<div className="text-xs font-bold text-white font-clash">
+							<div className="rounded-lg bg-orange-500/5 border border-orange-500/20 p-3.5 text-center space-y-2">
+								<Crown className="size-5 text-orange-400 mx-auto" />
+								<div className="text-xs font-bold text-foreground font-clash">
 									Unlock CapCut PRO Features
 								</div>
-								<p className="text-[11px] text-zinc-300">
+								<p className="text-[11px] text-muted-foreground">
 									Export in 4K 60fps and enable AI voice clarity & color grading.
 								</p>
 								<Button
 									size="sm"
 									onClick={openModal}
-									className="w-full h-7 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg"
+									className="w-full h-7 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs rounded-md shadow-xs"
 								>
 									Upgrade to Pro
 								</Button>

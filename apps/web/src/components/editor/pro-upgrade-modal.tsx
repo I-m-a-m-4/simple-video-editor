@@ -4,16 +4,12 @@ import { useState } from "react";
 import {
 	Dialog,
 	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useProStore } from "@/stores/pro-store";
 import {
 	Sparkles,
-	Check,
 	Zap,
 	ShieldCheck,
 	Crown,
@@ -22,7 +18,6 @@ import {
 	Cloud,
 	Film,
 	CheckCircle2,
-	Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,34 +55,34 @@ export function ProUpgradeModal() {
 
 	const proFeatures = [
 		{
-			icon: <Film className="size-4 text-purple-400" />,
+			icon: <Film className="size-4 text-orange-400" />,
 			title: "4K 60fps & Ultra HD Export",
-			desc: "Render timeline videos in pristine 4K resolution with GPU hardware acceleration.",
+			desc: "Full hardware-accelerated rendering up to 4K resolution.",
 		},
 		{
-			icon: <Sparkles className="size-4 text-amber-400" />,
-			title: "CapCut AI Smart Suggestions",
-			desc: "Instant AI timeline analysis to enhance colors, lighting, and audio clarity automatically.",
+			icon: <Sparkles className="size-4 text-orange-400" />,
+			title: "AI Smart Suggestions",
+			desc: "Automated timeline analysis for exposure, color, and audio balancing.",
 		},
 		{
-			icon: <Sliders className="size-4 text-emerald-400" />,
-			title: "Global Edits & Color Consistency",
-			desc: "One-click cinematic grade, auto-exposure matching across multi-camera clips.",
+			icon: <Sliders className="size-4 text-orange-400" />,
+			title: "Global Edits & Color Match",
+			desc: "One-click cinematic grade and consistent multi-clip exposure.",
 		},
 		{
-			icon: <Mic className="size-4 text-cyan-400" />,
-			title: "Studio Voice Clarity & Isolation",
-			desc: "Remove background hiss and optimize vocal frequencies with deep audio filters.",
+			icon: <Mic className="size-4 text-orange-400" />,
+			title: "Studio Voice Clarity",
+			desc: "Background noise suppression and vocal isolation filters.",
 		},
 		{
-			icon: <Zap className="size-4 text-yellow-400" />,
-			title: "Unlimited Timeline Audio & Video Tracks",
-			desc: "Layer complex sound effects, music beds, and visual overlays with zero limits.",
+			icon: <Zap className="size-4 text-orange-400" />,
+			title: "Unlimited Audio & Video Tracks",
+			desc: "Create complex multi-layered soundtracks and overlay composites.",
 		},
 		{
-			icon: <Cloud className="size-4 text-blue-400" />,
-			title: "Cloud Backup & Autonomous Copilot",
-			desc: "Unlimited Groq agentic timeline operations and instant cloud workspace syncing.",
+			icon: <Cloud className="size-4 text-orange-400" />,
+			title: "Cloud Backup & Agent Copilot",
+			desc: "Autonomous Groq agent timeline tools and workspace syncing.",
 		},
 	];
 
@@ -111,13 +106,13 @@ export function ProUpgradeModal() {
 		const name = customerName.trim() || "Video Creator";
 
 		setIsLoading(true);
-		toast.loading("Preparing secure Flutterwave checkout...", { id: "fw-loading" });
+		toast.loading("Opening secure Flutterwave checkout...", { id: "fw-loading" });
 
 		const scriptLoaded = await loadFlutterwaveScript();
 		if (!scriptLoaded || !window.FlutterwaveCheckout) {
 			toast.dismiss("fw-loading");
 			setIsLoading(false);
-			toast.error("Failed to load payment gateway. Please check your connection and try again.");
+			toast.error("Failed to load payment gateway. Please check your internet connection.");
 			return;
 		}
 
@@ -146,7 +141,7 @@ export function ProUpgradeModal() {
 			},
 			callback: async (response: any) => {
 				setIsLoading(true);
-				toast.loading("Verifying transaction with server...", { id: "fw-verify" });
+				toast.loading("Verifying transaction...", { id: "fw-verify" });
 
 				try {
 					const res = await fetch("/api/payment/flutterwave/verify", {
@@ -158,27 +153,16 @@ export function ProUpgradeModal() {
 					const result = await res.json();
 					toast.dismiss("fw-verify");
 
-					if (result.success) {
+					if (result.success || response.status === "successful") {
 						setProStatus({
 							isPro: true,
 							plan: billingCycle,
 							transactionId: String(response.transaction_id),
 							customerEmail: email,
 						});
-						toast.success("Welcome to PRO! All features have been unlocked 🚀");
+						toast.success("Welcome to PRO! Features unlocked.");
 					} else {
-						// Even if server verification had a network hiccup, check response status
-						if (response.status === "successful") {
-							setProStatus({
-								isPro: true,
-								plan: billingCycle,
-								transactionId: String(response.transaction_id),
-								customerEmail: email,
-							});
-							toast.success("Payment received! Welcome to Pro.");
-						} else {
-							toast.error(result.message || "Payment could not be verified.");
-						}
+						toast.error(result.message || "Payment could not be verified.");
 					}
 				} catch (err) {
 					console.error("Verification error:", err);
@@ -190,7 +174,7 @@ export function ProUpgradeModal() {
 							transactionId: String(response.transaction_id),
 							customerEmail: email,
 						});
-						toast.success("Welcome to PRO! Enjoy unlimited tools.");
+						toast.success("Welcome to PRO!");
 					}
 				} finally {
 					setIsLoading(false);
@@ -204,55 +188,58 @@ export function ProUpgradeModal() {
 
 	return (
 		<Dialog open={isModalOpen} onOpenChange={(open) => !open && closeModal()}>
-			<DialogContent className="max-w-2xl bg-zinc-950 text-zinc-100 border border-purple-500/30 p-0 overflow-hidden shadow-2xl rounded-2xl">
-				{/* Top Glow Ambient Banner */}
-				<div className="relative bg-gradient-to-r from-purple-900/60 via-indigo-950/80 to-purple-900/60 p-6 border-b border-purple-500/20">
-					<div className="absolute top-0 right-1/4 -z-10 h-32 w-48 rounded-full bg-purple-500/20 blur-3xl pointer-events-none" />
+			<DialogContent className="max-w-xl bg-zinc-950 text-zinc-100 border border-zinc-800 p-0 overflow-hidden shadow-2xl rounded-xl">
+				{/* Top Minimalist Header */}
+				<div className="p-6 border-b border-zinc-800/80 bg-zinc-900/30">
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2.5">
-							<div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-md shadow-purple-500/30">
-								<Crown className="size-5 text-white" />
+							<div className="flex size-8 items-center justify-center rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
+								<Crown className="size-4" />
 							</div>
 							<div>
 								<div className="flex items-center gap-2">
-									<h2 className="text-xl font-bold font-clash text-white tracking-wide">
-										Simple Video Editor PRO
+									<h2 className="text-lg font-bold font-clash text-white tracking-tight">
+										Upgrade to Pro
 									</h2>
-									<Badge className="bg-purple-500/20 text-purple-300 border-purple-500/40 text-[10px] uppercase font-semibold tracking-wider">
-										CapCut Pro Tier
+									<Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] uppercase font-semibold">
+										PRO
 									</Badge>
 								</div>
-								<p className="text-xs text-zinc-300 font-light mt-0.5">
-									Unleash professional timeline workflows, AI smart tools, and 4K exporting
+								<p className="text-xs text-zinc-400 font-light">
+									Professional editing tools, 4K export, and AI suggestions
 								</p>
 							</div>
 						</div>
 					</div>
 
-					{/* Billing Selector */}
-					<div className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-zinc-900/90 p-1 border border-zinc-800 max-w-sm mx-auto">
+					{/* Minimalist Billing Cycle Switcher */}
+					<div className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 p-1 border border-zinc-800 max-w-xs mx-auto">
 						<button
 							type="button"
 							onClick={() => setBillingCycle("monthly")}
-							className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+							className={`flex-1 rounded-md py-1 text-xs font-medium transition-all ${
 								billingCycle === "monthly"
-									? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+									? "bg-orange-500 text-white shadow-xs"
 									: "text-zinc-400 hover:text-white"
 							}`}
 						>
-							Monthly ({plans.monthly.displayNgn})
+							Monthly
 						</button>
 						<button
 							type="button"
 							onClick={() => setBillingCycle("annual")}
-							className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+							className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1 text-xs font-medium transition-all ${
 								billingCycle === "annual"
-									? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+									? "bg-orange-500 text-white shadow-xs"
 									: "text-zinc-400 hover:text-white"
 							}`}
 						>
-							<span>Annual ({plans.annual.displayNgn})</span>
-							<span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] px-1 py-0.2 rounded font-bold">
+							<span>Annual</span>
+							<span className={`text-[9px] px-1 py-0.5 rounded font-bold ${
+								billingCycle === "annual"
+									? "bg-white/20 text-white"
+									: "bg-orange-500/20 text-orange-400"
+							}`}>
 								-35%
 							</span>
 						</button>
@@ -260,31 +247,31 @@ export function ProUpgradeModal() {
 				</div>
 
 				{/* Body Content */}
-				<div className="p-6 space-y-6">
+				<div className="p-6 space-y-5">
 					{isPro ? (
-						<div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center space-y-2">
-							<CheckCircle2 className="size-8 text-emerald-400 mx-auto" />
-							<h3 className="text-base font-bold text-emerald-300 font-clash">
-								You have an Active PRO Membership
+						<div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-4 text-center space-y-2">
+							<CheckCircle2 className="size-6 text-orange-400 mx-auto" />
+							<h3 className="text-sm font-bold text-orange-300 font-clash">
+								Active Pro Subscription
 							</h3>
-							<p className="text-xs text-zinc-300">
-								All professional CapCut-style features, smart suggestions, and 4K GPU rendering are enabled.
+							<p className="text-xs text-zinc-400">
+								All professional features, AI suggestions, and 4K exporting are enabled.
 							</p>
 						</div>
 					) : (
 						<>
-							{/* Features List */}
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+							{/* Features Minimalist Grid */}
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
 								{proFeatures.map((item, idx) => (
 									<div
 										key={idx}
-										className="flex items-start gap-2.5 rounded-xl border border-zinc-800/80 bg-zinc-900/50 p-3 hover:border-purple-500/30 transition-colors"
+										className="flex items-start gap-2.5 rounded-lg border border-zinc-850 bg-zinc-900/40 p-2.5 hover:border-orange-500/20 transition-colors"
 									>
-										<div className="mt-0.5 shrink-0 rounded-lg bg-zinc-800 p-1.5 border border-zinc-700/50">
+										<div className="mt-0.5 shrink-0 rounded-md bg-zinc-800/80 p-1 border border-zinc-700/40">
 											{item.icon}
 										</div>
 										<div className="space-y-0.5">
-											<div className="text-xs font-bold text-white font-clash">
+											<div className="text-xs font-semibold text-zinc-200">
 												{item.title}
 											</div>
 											<div className="text-[11px] text-zinc-400 leading-tight font-light">
@@ -295,58 +282,58 @@ export function ProUpgradeModal() {
 								))}
 							</div>
 
-							{/* Checkout Input Section */}
-							<div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
-								<div className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
-									<span>Subscriber Details</span>
-									<span className="text-[10px] text-purple-400 font-medium flex items-center gap-1">
-										<ShieldCheck className="size-3" /> Powered by Flutterwave
+							{/* Customer Email Input */}
+							<div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 space-y-2">
+								<div className="text-xs font-medium text-zinc-300 flex items-center justify-between">
+									<span>Account Information</span>
+									<span className="text-[10px] text-zinc-500 flex items-center gap-1">
+										<ShieldCheck className="size-3 text-orange-400/80" /> Flutterwave
 									</span>
 								</div>
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 									<input
 										type="email"
-										placeholder="Your email address"
+										placeholder="Email address"
 										value={customerEmail}
 										onChange={(e) => setCustomerEmail(e.target.value)}
-										className="h-8 rounded-lg bg-zinc-950 border border-zinc-700/80 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-purple-500 focus:outline-none"
+										className="h-8 rounded-md bg-zinc-950 border border-zinc-800 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-orange-500 focus:outline-none"
 									/>
 									<input
 										type="text"
 										placeholder="Full name (optional)"
 										value={customerName}
 										onChange={(e) => setCustomerName(e.target.value)}
-										className="h-8 rounded-lg bg-zinc-950 border border-zinc-700/80 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-purple-500 focus:outline-none"
+										className="h-8 rounded-md bg-zinc-950 border border-zinc-800 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-orange-500 focus:outline-none"
 									/>
 								</div>
 							</div>
 
-							{/* Action Footer */}
-							<div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-zinc-800">
+							{/* Checkout Action Bar */}
+							<div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-zinc-800/80">
 								<div>
 									<div className="flex items-baseline gap-1.5">
-										<span className="text-2xl font-extrabold font-clash text-white">
+										<span className="text-xl font-bold font-clash text-white">
 											{currentPlan.displayNgn}
 										</span>
 										<span className="text-xs text-zinc-400">
 											{currentPlan.period}
 										</span>
-										<span className="text-xs text-zinc-500 font-mono">
+										<span className="text-xs text-zinc-500">
 											({currentPlan.displayUsd})
 										</span>
 									</div>
-									<div className="text-[10px] text-zinc-400">
-										Cancel anytime • Instant activation via Card, Transfer, USSD
+									<div className="text-[10px] text-zinc-500">
+										Cards, Bank Transfer, USSD • Cancel anytime
 									</div>
 								</div>
 
 								<Button
 									onClick={handleSubscribe}
 									disabled={isLoading}
-									className="w-full sm:w-auto px-6 py-2 h-10 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-purple-600/30 transition-all text-xs flex items-center gap-2"
+									className="w-full sm:w-auto px-5 py-2 h-9 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-md shadow-xs shadow-orange-500/10 transition-all text-xs flex items-center gap-2"
 								>
-									<Crown className="size-4" />
-									<span>{isLoading ? "Connecting to Gateway..." : "Upgrade with Flutterwave"}</span>
+									<Crown className="size-3.5" />
+									<span>{isLoading ? "Connecting..." : "Pay with Flutterwave"}</span>
 								</Button>
 							</div>
 						</>
