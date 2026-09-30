@@ -4,10 +4,13 @@ import { useState } from "react";
 import {
 	Dialog,
 	DialogContent,
+	DialogTitle,
+	DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useProStore } from "@/stores/pro-store";
+import { useAuth } from "@/auth/auth-context";
 import {
 	Sparkles,
 	Zap,
@@ -20,6 +23,7 @@ import {
 	CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { recordTelemetryEvent } from "@/stores/telemetry-store";
 
 declare global {
 	interface Window {
@@ -29,6 +33,7 @@ declare global {
 
 export function ProUpgradeModal() {
 	const { isModalOpen, closeModal, isPro, setProStatus } = useProStore();
+	const { user, isAuthenticated } = useAuth();
 	const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
 	const [customerEmail, setCustomerEmail] = useState("");
 	const [customerName, setCustomerName] = useState("");
@@ -55,32 +60,32 @@ export function ProUpgradeModal() {
 
 	const proFeatures = [
 		{
-			icon: <Film className="size-4 text-orange-400" />,
+			icon: <Film className="size-4 text-orange-500" />,
 			title: "4K 60fps & Ultra HD Export",
 			desc: "Full hardware-accelerated rendering up to 4K resolution.",
 		},
 		{
-			icon: <Sparkles className="size-4 text-orange-400" />,
+			icon: <Sparkles className="size-4 text-orange-500" />,
 			title: "AI Smart Suggestions",
 			desc: "Automated timeline analysis for exposure, color, and audio balancing.",
 		},
 		{
-			icon: <Sliders className="size-4 text-orange-400" />,
+			icon: <Sliders className="size-4 text-orange-500" />,
 			title: "Global Edits & Color Match",
 			desc: "One-click cinematic grade and consistent multi-clip exposure.",
 		},
 		{
-			icon: <Mic className="size-4 text-orange-400" />,
+			icon: <Mic className="size-4 text-orange-500" />,
 			title: "Studio Voice Clarity",
 			desc: "Background noise suppression and vocal isolation filters.",
 		},
 		{
-			icon: <Zap className="size-4 text-orange-400" />,
+			icon: <Zap className="size-4 text-orange-500" />,
 			title: "Unlimited Audio & Video Tracks",
 			desc: "Create complex multi-layered soundtracks and overlay composites.",
 		},
 		{
-			icon: <Cloud className="size-4 text-orange-400" />,
+			icon: <Cloud className="size-4 text-orange-500" />,
 			title: "Cloud Backup & Agent Copilot",
 			desc: "Autonomous Groq agent timeline tools and workspace syncing.",
 		},
@@ -102,8 +107,8 @@ export function ProUpgradeModal() {
 	};
 
 	const handleSubscribe = async () => {
-		const email = customerEmail.trim() || "creator@opencut.app";
-		const name = customerName.trim() || "Video Creator";
+		const email = user?.email || customerEmail.trim() || "creator@opencut.app";
+		const name = user?.name || customerName.trim() || "Video Creator";
 
 		setIsLoading(true);
 		toast.loading("Opening secure Flutterwave checkout...", { id: "fw-loading" });
@@ -178,6 +183,7 @@ export function ProUpgradeModal() {
 					}
 				} finally {
 					setIsLoading(false);
+					recordTelemetryEvent("payment_completed", "Flutterwave Pro Upgrade", `${billingCycle} plan - ${currentPlan.displayNgn}`);
 				}
 			},
 			onclose: () => {
@@ -188,39 +194,39 @@ export function ProUpgradeModal() {
 
 	return (
 		<Dialog open={isModalOpen} onOpenChange={(open) => !open && closeModal()}>
-			<DialogContent className="max-w-xl bg-zinc-950 text-zinc-100 border border-zinc-800 p-0 overflow-hidden shadow-2xl rounded-xl">
+			<DialogContent className="max-w-xl bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 p-0 overflow-hidden shadow-2xl rounded-xl">
 				{/* Top Minimalist Header */}
-				<div className="p-6 border-b border-zinc-800/80 bg-zinc-900/30">
+				<div className="p-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50">
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2.5">
-							<div className="flex size-8 items-center justify-center rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
+							<div className="flex size-8 items-center justify-center rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500">
 								<Crown className="size-4" />
 							</div>
 							<div>
 								<div className="flex items-center gap-2">
-									<h2 className="text-lg font-bold font-clash text-white tracking-tight">
+									<DialogTitle className="text-lg font-bold font-clash text-zinc-900 dark:text-zinc-100 tracking-tight">
 										Upgrade to Pro
-									</h2>
-									<Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] uppercase font-semibold">
+									</DialogTitle>
+									<Badge className="bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 text-[10px] uppercase font-semibold">
 										PRO
 									</Badge>
 								</div>
-								<p className="text-xs text-zinc-400 font-light">
+								<DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">
 									Professional editing tools, 4K export, and AI suggestions
-								</p>
+								</DialogDescription>
 							</div>
 						</div>
 					</div>
 
 					{/* Minimalist Billing Cycle Switcher */}
-					<div className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 p-1 border border-zinc-800 max-w-xs mx-auto">
+					<div className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-900 p-1 border border-zinc-200 dark:border-zinc-800 max-w-xs mx-auto">
 						<button
 							type="button"
 							onClick={() => setBillingCycle("monthly")}
 							className={`flex-1 rounded-md py-1 text-xs font-medium transition-all ${
 								billingCycle === "monthly"
-									? "bg-orange-500 text-white shadow-xs"
-									: "text-zinc-400 hover:text-white"
+									? "bg-orange-500 text-white shadow-xs font-semibold"
+									: "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
 							}`}
 						>
 							Monthly
@@ -230,15 +236,15 @@ export function ProUpgradeModal() {
 							onClick={() => setBillingCycle("annual")}
 							className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1 text-xs font-medium transition-all ${
 								billingCycle === "annual"
-									? "bg-orange-500 text-white shadow-xs"
-									: "text-zinc-400 hover:text-white"
+									? "bg-orange-500 text-white shadow-xs font-semibold"
+									: "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
 							}`}
 						>
 							<span>Annual</span>
 							<span className={`text-[9px] px-1 py-0.5 rounded font-bold ${
 								billingCycle === "annual"
 									? "bg-white/20 text-white"
-									: "bg-orange-500/20 text-orange-400"
+									: "bg-orange-500/10 text-orange-600 dark:text-orange-400"
 							}`}>
 								-35%
 							</span>
@@ -247,14 +253,14 @@ export function ProUpgradeModal() {
 				</div>
 
 				{/* Body Content */}
-				<div className="p-6 space-y-5">
+				<div className="p-6 space-y-5 bg-white dark:bg-zinc-950">
 					{isPro ? (
 						<div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-4 text-center space-y-2">
-							<CheckCircle2 className="size-6 text-orange-400 mx-auto" />
-							<h3 className="text-sm font-bold text-orange-300 font-clash">
+							<CheckCircle2 className="size-6 text-orange-500 mx-auto" />
+							<h3 className="text-sm font-bold text-orange-600 dark:text-orange-400 font-clash">
 								Active Pro Subscription
 							</h3>
-							<p className="text-xs text-zinc-400">
+							<p className="text-xs text-zinc-600 dark:text-zinc-400">
 								All professional features, AI suggestions, and 4K exporting are enabled.
 							</p>
 						</div>
@@ -265,16 +271,16 @@ export function ProUpgradeModal() {
 								{proFeatures.map((item, idx) => (
 									<div
 										key={idx}
-										className="flex items-start gap-2.5 rounded-lg border border-zinc-850 bg-zinc-900/40 p-2.5 hover:border-orange-500/20 transition-colors"
+										className="flex items-start gap-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 p-2.5 hover:border-orange-500/30 transition-colors shadow-xs"
 									>
-										<div className="mt-0.5 shrink-0 rounded-md bg-zinc-800/80 p-1 border border-zinc-700/40">
+										<div className="mt-0.5 shrink-0 rounded-md bg-white dark:bg-zinc-800 p-1 border border-zinc-200 dark:border-zinc-700">
 											{item.icon}
 										</div>
 										<div className="space-y-0.5">
-											<div className="text-xs font-semibold text-zinc-200">
+											<div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
 												{item.title}
 											</div>
-											<div className="text-[11px] text-zinc-400 leading-tight font-light">
+											<div className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight font-normal">
 												{item.desc}
 											</div>
 										</div>
@@ -282,47 +288,72 @@ export function ProUpgradeModal() {
 								))}
 							</div>
 
-							{/* Customer Email Input */}
-							<div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 space-y-2">
-								<div className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-									<span>Account Information</span>
-									<span className="text-[10px] text-zinc-500 flex items-center gap-1">
-										<ShieldCheck className="size-3 text-orange-400/80" /> Flutterwave
-									</span>
+							{/* Account Details - Automatically pre-filled if authenticated */}
+							{isAuthenticated && user ? (
+								<div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 flex items-center justify-between shadow-xs">
+									<div className="flex items-center gap-2.5">
+										<div className="size-8 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500 flex items-center justify-center font-bold text-xs uppercase">
+											{user.name ? user.name[0] : user.email[0]}
+										</div>
+										<div className="text-left">
+											<div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+												<span>{user.name || "Video Creator"}</span>
+												<Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[9px] py-0 px-1 font-medium">
+													Verified Account
+												</Badge>
+											</div>
+											<div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-normal">
+												{user.email}
+											</div>
+										</div>
+									</div>
+									<div className="flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400 font-medium">
+										<CheckCircle2 className="size-3.5" />
+										<span>Auto-Linked</span>
+									</div>
 								</div>
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-									<input
-										type="email"
-										placeholder="Email address"
-										value={customerEmail}
-										onChange={(e) => setCustomerEmail(e.target.value)}
-										className="h-8 rounded-md bg-zinc-950 border border-zinc-800 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-orange-500 focus:outline-none"
-									/>
-									<input
-										type="text"
-										placeholder="Full name (optional)"
-										value={customerName}
-										onChange={(e) => setCustomerName(e.target.value)}
-										className="h-8 rounded-md bg-zinc-950 border border-zinc-800 px-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-orange-500 focus:outline-none"
-									/>
+							) : (
+								<div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 p-3 space-y-2">
+									<div className="text-xs font-medium text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
+										<span>Account Information</span>
+										<span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+											<ShieldCheck className="size-3 text-orange-500" /> Flutterwave
+										</span>
+									</div>
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+										<input
+											type="email"
+											placeholder="Email address"
+											value={customerEmail}
+											onChange={(e) => setCustomerEmail(e.target.value)}
+											className="h-8 rounded-md bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 px-2.5 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+										/>
+										<input
+											type="text"
+											placeholder="Full name (optional)"
+											value={customerName}
+											onChange={(e) => setCustomerName(e.target.value)}
+											className="h-8 rounded-md bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 px-2.5 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+										/>
+									</div>
 								</div>
-							</div>
+							)}
 
 							{/* Checkout Action Bar */}
-							<div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-zinc-800/80">
+							<div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
 								<div>
 									<div className="flex items-baseline gap-1.5">
-										<span className="text-xl font-bold font-clash text-white">
+										<span className="text-xl font-bold font-clash text-zinc-900 dark:text-zinc-100">
 											{currentPlan.displayNgn}
 										</span>
-										<span className="text-xs text-zinc-400">
+										<span className="text-xs text-zinc-500 dark:text-zinc-400">
 											{currentPlan.period}
 										</span>
-										<span className="text-xs text-zinc-500">
+										<span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
 											({currentPlan.displayUsd})
 										</span>
 									</div>
-									<div className="text-[10px] text-zinc-500">
+									<div className="text-[10px] text-zinc-500 dark:text-zinc-400">
 										Cards, Bank Transfer, USSD • Cancel anytime
 									</div>
 								</div>
@@ -330,7 +361,7 @@ export function ProUpgradeModal() {
 								<Button
 									onClick={handleSubscribe}
 									disabled={isLoading}
-									className="w-full sm:w-auto px-5 py-2 h-9 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-md shadow-xs shadow-orange-500/10 transition-all text-xs flex items-center gap-2"
+									className="w-full sm:w-auto px-5 py-2 h-9 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-md shadow-xs shadow-orange-500/10 transition-all text-xs flex items-center justify-center gap-2"
 								>
 									<Crown className="size-3.5" />
 									<span>{isLoading ? "Connecting..." : "Pay with Flutterwave"}</span>

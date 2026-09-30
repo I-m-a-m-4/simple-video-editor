@@ -8,6 +8,7 @@ import { baseMetaData } from "./metadata";
 import { BotIdClient } from "botid/client";
 import { webEnv } from "@/env/web";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { AuthProvider } from "@/auth/auth-context";
 
 const siteFont = Plus_Jakarta_Sans({
 	subsets: ["latin"],
@@ -55,20 +56,22 @@ export default function RootLayout({
 					disableTransitionOnChange={true}
 				>
 					<TooltipProvider>
-						<Toaster />
-						<Script
-							src="https://cdn.databuddy.cc/databuddy.js"
-							strategy="afterInteractive"
-							async
-							data-client-id="UP-Wcoy5arxFeK7oyjMMZ"
-							data-disabled={webEnv.NODE_ENV === "development"}
-							data-track-attributes={false}
-							data-track-errors={true}
-							data-track-outgoing-links={false}
-							data-track-web-vitals={false}
-							data-track-sessions={false}
-						/>
-						{children}
+						<AuthProvider>
+							<Toaster />
+							<Script
+								src="https://cdn.databuddy.cc/databuddy.js"
+								strategy="afterInteractive"
+								async
+								data-client-id="UP-Wcoy5arxFeK7oyjMMZ"
+								data-disabled={webEnv.NODE_ENV === "development"}
+								data-track-attributes={false}
+								data-track-errors={true}
+								data-track-outgoing-links={false}
+								data-track-web-vitals={false}
+								data-track-sessions={false}
+							/>
+							{children}
+						</AuthProvider>
 					</TooltipProvider>
 				</ThemeProvider>
 			</body>

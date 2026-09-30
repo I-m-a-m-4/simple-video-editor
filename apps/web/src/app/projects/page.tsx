@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { EditorCore } from "@/core";
 import { MigrationDialog } from "@/project/components/migration-dialog";
 import { StoragePersistenceDialog } from "@/services/storage/components/storage-persistence-dialog";
+import { AuthGuard } from "@/auth/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -104,36 +105,38 @@ export default function ProjectsPage() {
 	}, [editor.project]);
 
 	return (
-		<div className="bg-background min-h-screen">
-			<MigrationDialog />
-			<StoragePersistenceDialog />
-			<ChangelogNotification />
-			<ProjectsHeader />
-			<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
-			<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
-				{isLoading || !isInitialized ? (
-					<ProjectsSkeleton />
-				) : projectsToDisplay.length === 0 ? (
-					<EmptyState />
-				) : (
-					<div
-						className={
-							viewMode === "grid"
-								? "xs:grid-cols-2 grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-4 px-4"
-								: "flex flex-col"
-						}
-					>
-						{projectsToDisplay.map((project) => (
-							<ProjectItem
-								key={project.id}
-								project={project}
-								allProjectIds={projectsToDisplay.map((p) => p.id)}
-							/>
-						))}
-					</div>
-				)}
-			</main>
-		</div>
+		<AuthGuard fallbackMessage="Please sign in or create an account to view and create video projects.">
+			<div className="bg-background min-h-screen">
+				<MigrationDialog />
+				<StoragePersistenceDialog />
+				<ChangelogNotification />
+				<ProjectsHeader />
+				<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
+				<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
+					{isLoading || !isInitialized ? (
+						<ProjectsSkeleton />
+					) : projectsToDisplay.length === 0 ? (
+						<EmptyState />
+					) : (
+						<div
+							className={
+								viewMode === "grid"
+									? "xs:grid-cols-2 grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-4 px-4"
+									: "flex flex-col"
+							}
+						>
+							{projectsToDisplay.map((project) => (
+								<ProjectItem
+									key={project.id}
+									project={project}
+									allProjectIds={projectsToDisplay.map((p) => p.id)}
+								/>
+							))}
+						</div>
+					)}
+				</main>
+			</div>
+		</AuthGuard>
 	);
 }
 

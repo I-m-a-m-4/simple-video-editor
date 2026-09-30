@@ -1,4 +1,6 @@
-import { initializeApp, getApps } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { isSupported, getAnalytics } from "firebase/analytics";
 import {
 	getFirestore,
 	collection,
@@ -14,7 +16,7 @@ import {
 } from "firebase/firestore";
 import type { AiChatItem } from "@/ai/types";
 
-const firebaseConfig = {
+export const firebaseConfig = {
 	apiKey: "AIzaSyB3wk_oEB9ON7gO9KRoZFHLAMxTJ-2RRAw",
 	authDomain: "ambercut-d07ef.firebaseapp.com",
 	projectId: "ambercut-d07ef",
@@ -25,8 +27,19 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase only once
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const db: Firestore = getFirestore(app);
+export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export const auth: Auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+export const db: Firestore = getFirestore(app);
+
+// Initialize Analytics in browser
+if (typeof window !== "undefined") {
+	isSupported().then((supported) => {
+		if (supported) {
+			getAnalytics(app);
+		}
+	});
+}
 
 /**
  * Returns the Firestore collection path for chat messages of a given project.
@@ -77,8 +90,11 @@ export async function saveChatMessages(
 			});
 		}
 		await batch.commit();
-	} catch (err) {
-		console.error("[Firebase] Failed to save chat messages:", err);
+	} catch (err: any) {
+		// Gracefully handle client ad-blockers or missing Firestore permissions without throwing errors
+		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
+			console.warn("[Firebase] Could not save chat messages:", err?.message || err);
+		}
 	}
 }
 
@@ -106,8 +122,11 @@ export async function loadChatMessages(
 				pending: false,
 			};
 		});
-	} catch (err) {
-		console.error("[Firebase] Failed to load chat messages:", err);
+	} catch (err: any) {
+		// Silent fallback if offline, adblocker active, or unauthenticated
+		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
+			console.warn("[Firebase] Chat sync offline:", err?.message || err);
+		}
 		return [];
 	}
 }
@@ -128,9 +147,9 @@ export async function clearChatMessages(projectId: string): Promise<void> {
 			}
 			await batch.commit();
 		}
-	} catch (err) {
-		console.error("[Firebase] Failed to clear chat messages:", err);
+	} catch (err: any) {
+		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
+			console.warn("[Firebase] Could not clear chat messages:", err?.message || err);
+		}
 	}
 }
-
-export { db };

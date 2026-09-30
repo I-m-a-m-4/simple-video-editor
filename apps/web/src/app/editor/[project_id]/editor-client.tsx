@@ -35,25 +35,29 @@ import {
 	getBookmarkPreviewOverlaySource,
 } from "@/timeline/bookmarks/index";
 
+import { AuthGuard } from "@/auth/auth-guard";
+
 export default function EditorClient({ projectId: propProjectId }: { projectId?: string }) {
 	const params = useParams();
 	const projectId = propProjectId ?? (params?.project_id as string) ?? "default";
 
 	return (
-		<MobileGate>
-			<EditorProvider projectId={projectId}>
-				<div className="bg-background flex h-screen w-screen flex-col overflow-hidden">
-					<DegradedRendererBanner />
-					<EditorHeader />
-					<div className="min-h-0 min-w-0 flex-1">
-						<EditorLayout />
+		<AuthGuard fallbackMessage="You must be signed in to open and edit video projects in AmberCut.">
+			<MobileGate>
+				<EditorProvider projectId={projectId}>
+					<div className="bg-background flex h-screen w-screen flex-col overflow-hidden">
+						<DegradedRendererBanner />
+						<EditorHeader />
+						<div className="min-h-0 min-w-0 flex-1">
+							<EditorLayout />
+						</div>
+						<Onboarding />
+						<MigrationDialog />
+						<ChangelogNotification />
 					</div>
-					<Onboarding />
-					<MigrationDialog />
-					<ChangelogNotification />
-				</div>
-			</EditorProvider>
-		</MobileGate>
+				</EditorProvider>
+			</MobileGate>
+		</AuthGuard>
 	);
 }
 

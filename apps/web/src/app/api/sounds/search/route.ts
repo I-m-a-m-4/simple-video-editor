@@ -3,6 +3,7 @@ export const dynamic = "force-static";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { checkRateLimit } from "@/auth/rate-limit";
+import { getBuiltInSounds } from "@/sounds/built-in-sounds";
 
 const searchParamsSchema = z.object({
 	q: z.string().max(500, "Query too long").optional(),
@@ -197,8 +198,34 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
-		const baseUrl = "https://freesound.org/apiv2/search/text/";
+		const builtInList = getBuiltInSounds();
+		const q = (query || "").trim().toLowerCase();
+		const matchedBuiltIn = q
+			? builtInList.filter(
+					(s) =>
+						s.name.toLowerCase().includes(q) ||
+						s.description.toLowerCase().includes(q) ||
+						s.tags.some((t) => t.toLowerCase().includes(q)),
+			  )
+			: builtInList;
 
+		// If no Freesound API key is configured, return the built-in library directly
+		if (!webEnv.FREESOUND_API_KEY) {
+			return NextResponse.json({
+				count: matchedBuiltIn.length,
+				next: null,
+				previous: null,
+				results: matchedBuiltIn,
+				query: query || "",
+				type: type || "effects",
+				page,
+				pageSize,
+				sort,
+				minRating: min_rating,
+			});
+		}
+
+		const baseUrl = "https://freesound.org/apiv2/search/text/";
 		const sortParam = buildSortParameter({ query, sort });
 
 		const params = new URLSearchParams({
@@ -216,66 +243,87 @@ export async function GET(request: NextRequest) {
 			applyEffectsFilters({ params, min_rating, commercial_only });
 		}
 
-		const response = await fetch(`${baseUrl}?${params.toString()}`);
+		try {
+			const response = await fetch(`${baseUrl}?${params.toString()}`);
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			console.error("Freesound API error:", response.status, errorText);
-			return NextResponse.json(
-				{ error: "Failed to search sounds" },
-				{ status: response.status },
-			);
+			if (!response.ok) {
+				console.warn("Freesound API unavailable, serving built-in sound effects:", response.status);
+				return NextResponse.json({
+					count: matchedBuiltIn.length,
+					next: null,
+					previous: null,
+					results: matchedBuiltIn,
+					query: query || "",
+					type: type || "effects",
+					page,
+					pageSize,
+					sort,
+					minRating: min_rating,
+				});
+			}
+
+			const rawData = await response.json();
+			const freesoundValidation = freesoundResponseSchema.safeParse(rawData);
+			if (!freesoundValidation.success) {
+				return NextResponse.json({
+					count: matchedBuiltIn.length,
+					next: null,
+					previous: null,
+					results: matchedBuiltIn,
+					query: query || "",
+					type: type || "effects",
+					page,
+					pageSize,
+					sort,
+					minRating: min_rating,
+				});
+			}
+
+			const data = freesoundValidation.data;
+			const transformedResults = data.results.map(transformFreesoundResult);
+			// Combine built-in sounds at the top
+			const combinedResults = [...matchedBuiltIn, ...transformedResults];
+
+			return NextResponse.json({
+				count: combinedResults.length,
+				next: data.next,
+				previous: data.previous,
+				results: combinedResults,
+				query: query || "",
+				type: type || "effects",
+				page,
+				pageSize,
+				sort,
+				minRating: min_rating,
+			});
+		} catch (fetchErr) {
+			console.warn("Freesound network error, falling back to built-in sound library:", fetchErr);
+			return NextResponse.json({
+				count: matchedBuiltIn.length,
+				next: null,
+				previous: null,
+				results: matchedBuiltIn,
+				query: query || "",
+				type: type || "effects",
+				page,
+				pageSize,
+				sort,
+				minRating: min_rating,
+			});
 		}
-
-		const rawData = await response.json();
-
-		const freesoundValidation = freesoundResponseSchema.safeParse(rawData);
-		if (!freesoundValidation.success) {
-			console.error(
-				"Invalid Freesound API response:",
-				freesoundValidation.error,
-			);
-			return NextResponse.json(
-				{ error: "Invalid response from Freesound API" },
-				{ status: 502 },
-			);
-		}
-
-		const data = freesoundValidation.data;
-
-		const transformedResults = data.results.map(transformFreesoundResult);
-
-		const responseData = {
-			count: data.count,
-			next: data.next,
-			previous: data.previous,
-			results: transformedResults,
-			query: query || "",
-			type: type || "effects",
-			page,
-			pageSize,
-			sort,
-			minRating: min_rating,
-		};
-
-		const responseValidation = apiResponseSchema.safeParse(responseData);
-		if (!responseValidation.success) {
-			console.error(
-				"Invalid API response structure:",
-				responseValidation.error,
-			);
-			return NextResponse.json(
-				{ error: "Internal response formatting error" },
-				{ status: 500 },
-			);
-		}
-
-		return NextResponse.json(responseValidation.data);
 	} catch (error) {
-		console.error("Error searching sounds:", error);
-		return NextResponse.json(
-			{ error: "Internal server error" },
-			{ status: 500 },
-		);
+		console.warn("Error in sounds search route, returning built-in sound fallback:", error);
+		const builtInList = getBuiltInSounds();
+		return NextResponse.json({
+			count: builtInList.length,
+			next: null,
+			previous: null,
+			results: builtInList,
+			query: "",
+			type: "effects",
+			page: 1,
+			pageSize: 50,
+			sort: "downloads",
+		});
 	}
 }

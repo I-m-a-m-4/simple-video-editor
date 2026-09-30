@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { Button } from "./ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ShieldCheck, Film, Crown, LogOut } from "lucide-react";
+import { Badge } from "./ui/badge";
 import Image from "next/image";
 import { ThemeToggle } from "./theme-toggle";
 import {
@@ -24,27 +25,40 @@ import {
 	ContextMenuItem,
 	ContextMenuTrigger,
 } from "./ui/context-menu";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
+import { useAuth } from "@/auth/auth-context";
+
+const ADMIN_EMAILS = ["belloimam431@gmail.com"];
 
 export function Header() {
+	const { user, isAuthenticated, signOut } = useAuth();
+	const isAdmin = user?.email
+		? ADMIN_EMAILS.includes(user.email.trim().toLowerCase())
+		: false;
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
 	const closeMenu = () => setIsMenuOpen(false);
 
 	const links = [
 		{
-			label: "Roadmap",
-			href: "/roadmap",
+			label: "Features",
+			href: "/#features",
 		},
 		{
-			label: "Contributors",
-			href: "/contributors",
+			label: "AI Tools",
+			href: "/#ai-agent",
 		},
 		{
-			label: "Sponsors",
-			href: "/sponsors",
+			label: "Pricing",
+			href: "/#pricing",
 		},
 		{
-			label: "Blog",
-			href: "/blog",
+			label: "FAQ",
+			href: "/#faq",
 		},
 	];
 
@@ -62,6 +76,9 @@ export function Header() {
 									width={32}
 									height={32}
 								/>
+								<span className="font-bold font-clash text-base tracking-tight text-foreground hidden sm:inline-block">
+									AmberCut
+								</span>
 							</Link>
 						</ContextMenuTrigger>
 						<ContextMenuContent>
@@ -95,10 +112,10 @@ export function Header() {
 						</ContextMenuContent>
 					</ContextMenu>
 
-					<nav className="hidden items-center gap-4 md:flex">
+					<nav className="hidden items-center gap-5 md:flex">
 						{links.map((link) => (
 							<Link key={link.href} href={link.href}>
-								<Button variant="text" className="p-0 text-sm">
+								<Button variant="text" className="p-0 text-xs font-semibold text-muted-foreground hover:text-foreground">
 									{link.label}
 								</Button>
 							</Link>
@@ -118,19 +135,126 @@ export function Header() {
 						</Button>
 					</div>
 					<div className="hidden items-center gap-3 md:flex">
-						<Link href={SOCIAL_LINKS.github}>
-							<Button className="bg-background text-sm" variant="outline">
-								<HugeiconsIcon icon={GithubIcon} className="size-4" />
-								40k+
+						<Link href="/#pricing">
+							<Button variant="outline" className="text-xs font-semibold border-orange-500/30 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10">
+								Upgrade Pro
 							</Button>
 						</Link>
-						<Link href="/projects">
-							<Button className="text-sm">
-								Projects
-								<ArrowRight className="size-4" />
-							</Button>
-						</Link>
-						<ThemeToggle />
+
+						{isAuthenticated && user ? (
+							<>
+								<Link href="/projects">
+									<Button className="text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-xs">
+										Open Workspace
+										<ArrowRight className="size-3.5 ml-1" />
+									</Button>
+								</Link>
+
+								<ThemeToggle />
+
+								{/* Square User Profile Icon with Border Radius */}
+								<DropdownMenu>
+									<DropdownMenuTrigger asChild>
+										<button
+											type="button"
+											className="relative flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-muted/60 overflow-hidden hover:border-orange-500/60 hover:ring-2 hover:ring-orange-500/20 transition-all cursor-pointer shadow-xs focus:outline-none"
+											aria-label="Account profile"
+										>
+											{user.image ? (
+												<img
+													src={user.image}
+													alt={user.name || "User"}
+													className="size-full object-cover rounded-lg"
+													referrerPolicy="no-referrer"
+												/>
+											) : (
+												<div className="size-full rounded-lg bg-gradient-to-tr from-orange-500 via-amber-500 to-orange-600 text-white font-bold flex items-center justify-center text-xs uppercase shadow-xs">
+													{user.name ? user.name[0] : user.email[0]}
+												</div>
+											)}
+										</button>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent align="end" className="w-56 p-1.5 shadow-xl border border-border/80">
+										<div className="px-2.5 py-2 border-b border-border/60 mb-1 flex items-center gap-2.5">
+											<div className="size-8 rounded-lg overflow-hidden border border-border/60 shrink-0 bg-muted">
+												{user.image ? (
+													<img
+														src={user.image}
+														alt={user.name || "User"}
+														className="size-full object-cover rounded-lg"
+														referrerPolicy="no-referrer"
+													/>
+												) : (
+													<div className="size-full rounded-lg bg-orange-500 text-white font-bold flex items-center justify-center text-xs uppercase">
+														{user.name ? user.name[0] : user.email[0]}
+													</div>
+												)}
+											</div>
+											<div className="min-w-0 flex-1">
+												<div className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
+													<span>{user.name || "Video Creator"}</span>
+													{isAdmin && (
+														<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30 text-[9px] px-1 py-0 font-semibold uppercase">
+															Admin
+														</Badge>
+													)}
+												</div>
+												<div className="text-[10px] text-muted-foreground truncate font-normal">
+													{user.email}
+												</div>
+											</div>
+										</div>
+
+										{/* Admin Portal link for belloimam431@gmail.com */}
+										{isAdmin && (
+											<Link href="/admin">
+												<DropdownMenuItem className="text-xs font-semibold text-orange-600 dark:text-orange-400 focus:bg-orange-500/10 cursor-pointer flex items-center gap-2">
+													<ShieldCheck className="size-3.5 text-orange-500" />
+													<span>Admin Portal</span>
+												</DropdownMenuItem>
+											</Link>
+										)}
+
+										<Link href="/projects">
+											<DropdownMenuItem className="text-xs cursor-pointer flex items-center gap-2">
+												<Film className="size-3.5 text-muted-foreground" />
+												<span>My Video Projects</span>
+											</DropdownMenuItem>
+										</Link>
+
+										<Link href="/#pricing">
+											<DropdownMenuItem className="text-xs cursor-pointer flex items-center gap-2">
+												<Crown className="size-3.5 text-amber-500" />
+												<span>Subscription &amp; Plans</span>
+											</DropdownMenuItem>
+										</Link>
+
+										<DropdownMenuItem
+											onClick={signOut}
+											className="text-xs text-red-500 focus:text-red-600 cursor-pointer font-medium flex items-center gap-2 mt-1 border-t border-border/40 pt-1.5"
+										>
+											<LogOut className="size-3.5" />
+											<span>Sign Out</span>
+										</DropdownMenuItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
+							</>
+						) : (
+							<>
+								<Link href="/login">
+									<Button variant="ghost" className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+										Sign In
+									</Button>
+								</Link>
+								<Link href="/signup">
+									<Button className="text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-xs">
+										Start Creating Free
+										<ArrowRight className="size-3.5 ml-1" />
+									</Button>
+								</Link>
+								<ThemeToggle />
+							</>
+						)}
 					</div>
 				</div>
 				<div
@@ -181,6 +305,57 @@ export function Header() {
 									</Link>
 								</motion.div>
 							))}
+
+							<div className="pt-4 border-t border-border/60 flex flex-col gap-3">
+								{isAuthenticated && user ? (
+									<>
+										{isAdmin && (
+											<Link
+												href="/admin"
+												className="text-lg font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-2"
+												onClick={closeMenu}
+											>
+												<ShieldCheck className="size-5 text-orange-500" />
+												<span>Admin Portal</span>
+											</Link>
+										)}
+										<Link
+											href="/projects"
+											className="text-lg font-semibold text-foreground"
+											onClick={closeMenu}
+										>
+											My Video Projects
+										</Link>
+										<button
+											type="button"
+											className="text-left text-sm text-red-500 font-medium cursor-pointer"
+											onClick={() => {
+												signOut();
+												closeMenu();
+											}}
+										>
+											Sign Out ({user.email})
+										</button>
+									</>
+								) : (
+									<>
+										<Link
+											href="/login"
+											className="text-lg font-semibold text-foreground"
+											onClick={closeMenu}
+										>
+											Sign In
+										</Link>
+										<Link
+											href="/signup"
+											className="text-lg font-semibold text-orange-500"
+											onClick={closeMenu}
+										>
+											Create Free Account
+										</Link>
+									</>
+								)}
+							</div>
 						</nav>
 						<ThemeToggle
 							className="absolute right-8 bottom-8 size-10"

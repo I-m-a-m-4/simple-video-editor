@@ -4,7 +4,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Play, Download, Sparkles } from "lucide-react";
 
+import { useAuth } from "@/auth/auth-context";
+
 export function CtaSection() {
+	const { isAuthenticated } = useAuth();
+	const editorTarget = isAuthenticated ? "/projects" : "/signup?redirect=/projects";
+
 	return (
 		<section className="relative py-24 overflow-hidden bg-background border-t border-border/40">
 			{/* Glow */}
@@ -21,12 +26,12 @@ export function CtaSection() {
 					Experience the Future of Video Editing Today.
 				</h2>
 				<p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground font-light leading-relaxed">
-					No signup required to try. Test the Groq Agentic Copilot directly in your browser or install the native Windows desktop app.
+					Create your free account and start editing directly in your browser or install the native Windows desktop app.
 				</p>
 
 				<div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-					<Link href="/projects">
-						<Button size="lg" className="h-12 px-8 text-base font-semibold shadow-lg shadow-primary/25">
+					<Link href={editorTarget}>
+						<Button size="lg" className="h-12 px-8 text-base font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/25">
 							<Play className="mr-2 size-4 fill-current" />
 							Launch Editor Now
 							<ArrowRight className="ml-2 size-4" />
