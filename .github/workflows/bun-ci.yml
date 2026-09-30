@@ -55,8 +55,11 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build WASM
+      - name: Build WASM (bundler target for Next.js)
         run: wasm-pack build rust/wasm --target bundler --out-dir pkg
+
+      - name: Build WASM (nodejs target for tests)
+        run: wasm-pack build rust/wasm --target nodejs --out-dir pkg-node
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2

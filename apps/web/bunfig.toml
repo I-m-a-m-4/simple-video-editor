@@ -1,0 +1,5 @@
+[test]
+# Remap `opencut-wasm` to the Node.js-target build during `bun test`.
+# The bundler-target build (pkg/) is used by Next.js via webpack.
+# The nodejs-target build (pkg-node/) can be loaded directly by the Bun runtime.
+preload = ["./src/test-setup.ts"]

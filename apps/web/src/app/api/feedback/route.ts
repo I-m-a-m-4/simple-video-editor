@@ -3,6 +3,12 @@ import { z } from "zod";
 import { checkRateLimit } from "@/auth/rate-limit";
 import { submitFeedback, MAX_MESSAGE_LENGTH } from "@/feedback";
 
+export const dynamic = "force-static";
+
+export async function GET() {
+	return NextResponse.json({ ok: true });
+}
+
 const submitSchema = z.object({
 	message: z
 		.string()
@@ -11,6 +17,10 @@ const submitSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({ error: "Not available in desktop" }, { status: 400 });
+	}
+
 	const { limited } = await checkRateLimit({ request });
 	if (limited) {
 		return NextResponse.json({ error: "Too many requests" }, { status: 429 });

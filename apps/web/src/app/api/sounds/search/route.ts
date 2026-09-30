@@ -1,4 +1,5 @@
 import { webEnv } from "@/env/web";
+export const dynamic = "force-static";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { checkRateLimit } from "@/auth/rate-limit";
