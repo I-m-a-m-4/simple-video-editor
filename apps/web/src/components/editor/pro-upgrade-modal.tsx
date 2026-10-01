@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useProStore } from "@/stores/pro-store";
+import { useProStore, isUserAdmin } from "@/stores/pro-store";
 import { useAuth } from "@/auth/auth-context";
 import {
 	Sparkles,
@@ -32,12 +32,25 @@ declare global {
 }
 
 export function ProUpgradeModal() {
-	const { isModalOpen, closeModal, isPro, setProStatus } = useProStore();
+	const { isModalOpen, closeModal, isPro, plan, setProStatus, grantAdminAccess } = useProStore();
 	const { user, isAuthenticated } = useAuth();
 	const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
 	const [customerEmail, setCustomerEmail] = useState("");
 	const [customerName, setCustomerName] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
+
+	const activeEmail = user?.email || customerEmail.trim();
+	const isAdmin = isUserAdmin(activeEmail);
+
+	// Automatically recognize admin account and unlock all PRO capabilities for free
+	useEffect(() => {
+		if (isAdmin && !isPro) {
+			grantAdminAccess(activeEmail || "belloimam431@gmail.com");
+			toast.success("Admin Recognized: Lifetime Pro has been activated for free!", {
+				id: "admin-pro-active",
+			});
+		}
+	}, [isAdmin, isPro, activeEmail, grantAdminAccess]);
 
 	const plans = {
 		monthly: {
@@ -109,6 +122,12 @@ export function ProUpgradeModal() {
 	const handleSubscribe = async () => {
 		const email = user?.email || customerEmail.trim() || "creator@opencut.app";
 		const name = user?.name || customerName.trim() || "Video Creator";
+
+		if (isUserAdmin(email) || isAdmin) {
+			grantAdminAccess(email);
+			toast.success("Admin Recognized: Lifetime Pro activated for free!");
+			return;
+		}
 
 		setIsLoading(true);
 		toast.loading("Opening secure Flutterwave checkout...", { id: "fw-loading" });
@@ -258,11 +277,23 @@ export function ProUpgradeModal() {
 						<div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-4 text-center space-y-2">
 							<CheckCircle2 className="size-6 text-orange-500 mx-auto" />
 							<h3 className="text-sm font-bold text-orange-600 dark:text-orange-400 font-clash">
-								Active Pro Subscription
+								{plan === "admin" || isAdmin ? "Admin Lifetime Pro Access" : "Active Pro Subscription"}
 							</h3>
 							<p className="text-xs text-zinc-600 dark:text-zinc-400">
-								All professional features, AI suggestions, and 4K exporting are enabled.
+								{plan === "admin" || isAdmin
+									? `Admin privileges recognized for ${activeEmail || "belloimam431@gmail.com"}. All 4K exports, AI smart tools, studio clarity, and unlimited tracks are 100% free forever.`
+									: "All professional features, AI suggestions, and 4K exporting are enabled."}
 							</p>
+							<div className="pt-2 flex justify-center">
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={closeModal}
+									className="text-xs h-8 border-orange-500/30 text-orange-500 hover:bg-orange-500/10 font-semibold"
+								>
+									Done
+								</Button>
+							</div>
 						</div>
 					) : (
 						<>
@@ -289,7 +320,30 @@ export function ProUpgradeModal() {
 							</div>
 
 							{/* Account Details - Automatically pre-filled if authenticated */}
-							{isAuthenticated && user ? (
+							{isAdmin ? (
+								<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 flex items-center justify-between shadow-xs">
+									<div className="flex items-center gap-2.5">
+										<div className="size-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-500 flex items-center justify-center font-bold text-xs">
+											<ShieldCheck className="size-4" />
+										</div>
+										<div className="text-left">
+											<div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+												<span>{user?.name || "Bello Imam (Admin)"}</span>
+												<Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] py-0 px-1 font-semibold">
+													Admin • 100% Free
+												</Badge>
+											</div>
+											<div className="text-[11px] text-zinc-600 dark:text-zinc-400 font-normal">
+												{activeEmail || "belloimam431@gmail.com"}
+											</div>
+										</div>
+									</div>
+									<div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+										<CheckCircle2 className="size-3.5" />
+										<span>Lifetime Pro</span>
+									</div>
+								</div>
+							) : isAuthenticated && user ? (
 								<div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 flex items-center justify-between shadow-xs">
 									<div className="flex items-center gap-2.5">
 										<div className="size-8 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500 flex items-center justify-center font-bold text-xs uppercase">
@@ -344,27 +398,37 @@ export function ProUpgradeModal() {
 								<div>
 									<div className="flex items-baseline gap-1.5">
 										<span className="text-xl font-bold font-clash text-zinc-900 dark:text-zinc-100">
-											{currentPlan.displayNgn}
+											{isAdmin ? "₦0" : currentPlan.displayNgn}
 										</span>
 										<span className="text-xs text-zinc-500 dark:text-zinc-400">
-											{currentPlan.period}
+											{isAdmin ? "/ lifetime" : currentPlan.period}
 										</span>
 										<span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
-											({currentPlan.displayUsd})
+											{isAdmin ? "(Free for Admin)" : `(${currentPlan.displayUsd})`}
 										</span>
 									</div>
 									<div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-										Cards, Bank Transfer, USSD • Cancel anytime
+										{isAdmin ? "Admin privilege: Zero payment required" : "Cards, Bank Transfer, USSD • Cancel anytime"}
 									</div>
 								</div>
 
 								<Button
 									onClick={handleSubscribe}
 									disabled={isLoading}
-									className="w-full sm:w-auto px-5 py-2 h-9 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-semibold rounded-md shadow-xs shadow-orange-500/10 transition-all text-xs flex items-center justify-center gap-2"
+									className={`w-full sm:w-auto px-5 py-2 h-9 text-white font-semibold rounded-md shadow-xs transition-all text-xs flex items-center justify-center gap-2 ${
+										isAdmin
+											? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/10"
+											: "bg-orange-500 hover:bg-orange-600 active:bg-orange-700 shadow-orange-500/10"
+									}`}
 								>
-									<Crown className="size-3.5" />
-									<span>{isLoading ? "Connecting..." : "Pay with Flutterwave"}</span>
+									{isAdmin ? <CheckCircle2 className="size-3.5" /> : <Crown className="size-3.5" />}
+									<span>
+										{isLoading
+											? "Connecting..."
+											: isAdmin
+												? "Activate Admin Pro (Free)"
+												: "Pay with Flutterwave"}
+									</span>
 								</Button>
 							</div>
 						</>

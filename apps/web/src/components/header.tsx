@@ -32,14 +32,11 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { useAuth } from "@/auth/auth-context";
-
-const ADMIN_EMAILS = ["belloimam431@gmail.com"];
+import { isUserAdmin } from "@/stores/pro-store";
 
 export function Header() {
 	const { user, isAuthenticated, signOut } = useAuth();
-	const isAdmin = user?.email
-		? ADMIN_EMAILS.includes(user.email.trim().toLowerCase())
-		: false;
+	const isAdmin = isUserAdmin(user?.email);
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
 	const closeMenu = () => setIsMenuOpen(false);
 
