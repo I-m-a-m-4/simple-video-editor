@@ -6,6 +6,10 @@ authors = ["OpenCut Team"]
 license = "MIT"
 edition = "2021"
 
+[lib]
+name = "opencut_desktop_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
