@@ -3,18 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import type { EditorCore } from "@/core";
 import { MigrationDialog } from "@/project/components/migration-dialog";
 import { StoragePersistenceDialog } from "@/services/storage/components/storage-persistence-dialog";
 import { AuthGuard } from "@/auth/auth-guard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useEditor } from "@/editor/use-editor";
 import { useProjectsStore } from "./store";
 import type {
@@ -22,33 +21,8 @@ import type {
 	TProjectSortKey,
 	TProjectSortOption,
 } from "@/project/types";
-import { formatTimecode, mediaTimeToSeconds } from "opencut-wasm";
+import { formatMediaDuration } from "@/utils/duration";
 import { formatDate } from "@/utils/date";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-	Breadcrumb,
-	BreadcrumbItem,
-	BreadcrumbLink,
-	BreadcrumbList,
-	BreadcrumbPage,
-	BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import {
-	Calendar04Icon,
-	GridViewIcon,
-	LeftToRightListDashIcon,
-	PlusSignIcon,
-	Search01Icon,
-	Video01Icon,
-	MoreHorizontalIcon,
-	Delete02Icon,
-	Copy01Icon,
-	Edit03Icon,
-	ArrowDown02Icon,
-	InformationCircleIcon,
-} from "@hugeicons/core-free-icons";
-import { OcVideoIcon } from "@/components/icons";
-import { Label } from "@/components/ui/label";
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -66,134 +40,48 @@ import {
 import { DeleteProjectDialog } from "@/project/components/delete-project-dialog";
 import { ProjectInfoDialog } from "@/project/components/project-info-dialog";
 import { RenameProjectDialog } from "@/project/components/rename-project-dialog";
-import { cn } from "@/utils/ui";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
-const formatProjectDuration = ({
-	duration,
-}: {
-	duration: number | undefined;
-}): string | null => {
-	if (duration === undefined) {
-		return null;
-	}
+import { ScreenRecorderModal } from "@/components/recorder/screen-recorder-modal";
+import { TextToSpeechModal } from "@/components/tts/tts-modal";
+import { CreateProjectModal, type ProjectMode } from "@/project/components/create-project-modal";
+import { VideoToShortsModal } from "@/components/shorts/video-to-shorts-modal";
+import { ProUpgradeModal } from "@/components/editor/pro-upgrade-modal";
+import { useProStore } from "@/stores/pro-store";
+import { useAuth } from "@/auth/auth-context";
+import {
+	Plus,
+	Video,
+	Monitor,
+	Mic,
+	Volume2,
+	Sparkles,
+	Wand2,
+	Scissors,
+	ImageIcon,
+	Globe,
+	MessageSquare,
+	Shirt,
+	Search,
+	LayoutGrid,
+	List,
+	ArrowUpDown,
+	MoreVertical,
+	Copy,
+	Trash2,
+	Edit2,
+	Info,
+	Play,
+	Crown,
+	Home,
+	LayoutTemplate,
+	HardDrive,
+	FolderPlus,
+	ChevronRight,
+	Sun,
+	Moon,
+} from "lucide-react";
 
-	const durationSeconds = mediaTimeToSeconds({ time: duration });
-	const format = durationSeconds >= 3600 ? "HH:MM:SS" : "MM:SS";
-	return formatTimecode({ time: duration, format }) ?? "";
-};
-
-const VIEW_MODE_OPTIONS = [
-	{ mode: "grid" as const, icon: GridViewIcon, label: "Grid view" },
-	{ mode: "list" as const, icon: LeftToRightListDashIcon, label: "List view" },
-];
-
-export default function ProjectsPage() {
-	const { searchQuery, sortKey, sortOrder, viewMode } = useProjectsStore();
-	const editor = useEditor();
-	const sortOption: TProjectSortOption = `${sortKey}-${sortOrder}`;
-
-	const isLoading = useEditor((e) => e.project.getIsLoading());
-	const isInitialized = useEditor((e) => e.project.getIsInitialized());
-	const projectsToDisplay = useEditor((e) =>
-		e.project.getFilteredAndSortedProjects({ searchQuery, sortOption }),
-	);
-
-	useEffect(() => {
-		if (!editor.project.getIsInitialized()) {
-			editor.project.loadAllProjects();
-		}
-	}, [editor.project]);
-
-	return (
-		<AuthGuard fallbackMessage="Please sign in or create an account to view and create video projects.">
-			<div className="bg-background min-h-screen">
-				<MigrationDialog />
-				<StoragePersistenceDialog />
-				<ChangelogNotification />
-				<ProjectsHeader />
-				<ProjectsToolbar projectIds={projectsToDisplay.map((p) => p.id)} />
-				<main className="mx-auto px-4 pt-2 pb-6 flex flex-col gap-4">
-					{isLoading || !isInitialized ? (
-						<ProjectsSkeleton />
-					) : projectsToDisplay.length === 0 ? (
-						<EmptyState />
-					) : (
-						<div
-							className={
-								viewMode === "grid"
-									? "xs:grid-cols-2 grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-4 px-4"
-									: "flex flex-col"
-							}
-						>
-							{projectsToDisplay.map((project) => (
-								<ProjectItem
-									key={project.id}
-									project={project}
-									allProjectIds={projectsToDisplay.map((p) => p.id)}
-								/>
-							))}
-						</div>
-					)}
-				</main>
-			</div>
-		</AuthGuard>
-	);
-}
-
-function ProjectsHeader() {
-	const { viewMode, isHydrated, setViewMode } = useProjectsStore();
-
-	return (
-		<header className="sticky top-0 z-20 px-8 bg-background flex flex-col gap-2">
-			<div className="flex items-center justify-between h-16 pt-2">
-				<div className="flex items-center gap-5">
-					<Breadcrumb>
-						<BreadcrumbList>
-							<BreadcrumbItem>
-								<BreadcrumbLink asChild>
-									<Link href="/" className="text-sm sm:text-base">
-										Home
-									</Link>
-								</BreadcrumbLink>
-							</BreadcrumbItem>
-							<BreadcrumbSeparator />
-							<BreadcrumbItem>
-								<BreadcrumbPage className="text-sm sm:text-base font-medium">
-									All projects
-								</BreadcrumbPage>
-							</BreadcrumbItem>
-						</BreadcrumbList>
-					</Breadcrumb>
-
-					<div className="hidden md:flex items-center rounded-md border p-1 px-1.5 h-10">
-						{VIEW_MODE_OPTIONS.map(({ mode, icon, label }) => (
-							<Button
-								key={mode}
-								variant="ghost"
-								size="icon"
-								className={cn(
-									"rounded-sm hover:bg-background",
-									isHydrated && viewMode === mode && "!bg-accent",
-								)}
-								onClick={() => setViewMode({ viewMode: mode })}
-								aria-label={label}
-								aria-pressed={isHydrated && viewMode === mode}
-							>
-								<HugeiconsIcon icon={icon} className="size-4" />
-							</Button>
-						))}
-					</div>
-				</div>
-
-				<div className="flex items-center gap-3 md:gap-4">
-					<SearchBar className="hidden md:block" />
-					<NewProjectButton />
-				</div>
-			</div>
-			<SearchBar className="block md:hidden mb-4" />
-		</header>
-	);
-}
+const formatProjectDuration = formatMediaDuration;
 
 const SORT_LABELS: Record<TProjectSortKey, string> = {
 	createdAt: "Created",
@@ -202,272 +90,639 @@ const SORT_LABELS: Record<TProjectSortKey, string> = {
 	duration: "Duration",
 };
 
-function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
-	const {
-		selectedProjectIds,
-		sortKey,
-		sortOrder,
-		setSortOrder,
-		setSelectedProjects,
-		clearSelectedProjects,
-		viewMode,
-		setViewMode,
-	} = useProjectsStore();
-
-	const selectedProjectCount = selectedProjectIds.length;
-	const isAllSelected =
-		projectIds.length > 0 && selectedProjectCount === projectIds.length;
-	const hasSomeSelected =
-		selectedProjectCount > 0 && selectedProjectCount < projectIds.length;
-
-	const handleSelectAll = ({ checked }: { checked: boolean }) => {
-		if (checked) {
-			setSelectedProjects({ projectIds });
-			return;
-		}
-		clearSelectedProjects();
-	};
-
-	return (
-		<div className="sticky top-16 z-10 flex items-center justify-between px-6 h-14 pt-2 bg-background">
-			<div className="flex items-center gap-2">
-				<Label
-					className="flex items-center gap-3 cursor-pointer px-2"
-					htmlFor="select-all-projects"
-				>
-					<Checkbox
-						className="size-5"
-						id="select-all-projects"
-						checked={
-							isAllSelected ? true : hasSomeSelected ? "indeterminate" : false
-						}
-						onCheckedChange={(checked) =>
-							handleSelectAll({ checked: checked === true })
-						}
-					/>
-					<span className="text-muted-foreground hidden md:block">
-						Select all
-					</span>
-				</Label>
-
-				<div className="h-4 w-px bg-border/50" />
-
-				<SortDropdown>
-					<Button variant="text" className="text-muted-foreground pl-2">
-						{SORT_LABELS[sortKey]}
-					</Button>
-				</SortDropdown>
-				<Button
-					variant="text"
-					className="text-muted-foreground"
-					onClick={() =>
-						setSortOrder({
-							sortOrder: sortOrder === "asc" ? "desc" : "asc",
-						})
-					}
-					onKeyDown={(event) => {
-						if (event.key === "Enter" || event.key === " ") {
-							setSortOrder({
-								sortOrder: sortOrder === "asc" ? "desc" : "asc",
-							});
-						}
-					}}
-					aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-				>
-					<HugeiconsIcon
-						icon={ArrowDown02Icon}
-						className={sortOrder === "asc" ? "rotate-180" : ""}
-					/>
-				</Button>
-
-				<div className="h-4 w-px bg-border/50 block md:hidden" />
-
-				<div className="flex md:hidden items-center gap-4">
-					{VIEW_MODE_OPTIONS.map(({ mode, icon, label }) => (
-						<Button
-							key={mode}
-							variant="text"
-							onClick={() => setViewMode({ viewMode: mode })}
-							aria-label={label}
-						>
-							<HugeiconsIcon
-								icon={icon}
-								className={cn(
-									viewMode === mode ? "text-primary" : "text-muted-foreground",
-								)}
-							/>
-						</Button>
-					))}
-				</div>
-			</div>
-			{selectedProjectCount > 0 ? <ProjectActions /> : null}
-		</div>
-	);
-}
-
-function SearchBar({
-	className,
-	collapsed,
-}: {
-	className?: string;
-	collapsed?: boolean;
-}) {
-	const { searchQuery, setSearchQuery } = useProjectsStore();
-
-	return (
-		<>
-			{collapsed ? (
-				<div className="block md:hidden">
-					<Button
-						size="icon"
-						variant="outline"
-						className="size-10.5 rounded-full"
-					>
-						<HugeiconsIcon icon={Search01Icon} />
-					</Button>
-				</div>
-			) : (
-				<div className={cn("relative", className)}>
-					<HugeiconsIcon
-						icon={Search01Icon}
-						className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2"
-						aria-hidden="true"
-					/>
-					<Input
-						placeholder="Search..."
-						value={searchQuery}
-						onChange={(event) => setSearchQuery({ query: event.target.value })}
-						size="lg"
-						className="pl-9"
-					/>
-				</div>
-			)}
-		</>
-	);
-}
-
-const PROJECT_ACTIONS = [
-	{
-		id: "duplicate",
-		label: "Duplicate",
-		icon: Copy01Icon,
-		variant: "outline" as const,
-	},
-	{
-		id: "delete",
-		label: "Delete",
-		icon: Delete02Icon,
-		variant: "destructive-foreground" as const,
-	},
-] as const;
-
-async function deleteProjects({
-	editor,
-	ids,
-}: {
-	editor: EditorCore;
-	ids: string[];
-}) {
-	await editor.project.deleteProjects({ ids });
-}
-
-async function duplicateProjects({
-	editor,
-	ids,
-}: {
-	editor: EditorCore;
-	ids: string[];
-}) {
-	await editor.project.duplicateProjects({ ids });
-}
-
-async function renameProject({
-	editor,
-	id,
-	name,
-}: {
-	editor: EditorCore;
-	id: string;
-	name: string;
-}) {
-	await editor.project.renameProject({ id, name });
-}
-
-function ProjectActions() {
+export default function ProjectsPage() {
+	const { searchQuery, sortKey, sortOrder, viewMode } = useProjectsStore();
 	const editor = useEditor();
-	const { selectedProjectIds, clearSelectedProjects } = useProjectsStore();
-	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+	const router = useRouter();
+	const { theme, setTheme } = useTheme();
+	const [mounted, setMounted] = useState(false);
+	const sortOption: TProjectSortOption = `${sortKey}-${sortOrder}`;
 
-	const savedProjects = editor.project.getSavedProjects();
-	const selectedProjectNames = savedProjects
-		.filter((project) => selectedProjectIds.includes(project.id))
-		.map((project) => project.name);
+	const isLoading = useEditor((e) => e.project.getIsLoading());
+	const isInitialized = useEditor((e) => e.project.getIsInitialized());
+	const projectsToDisplay = useEditor((e) =>
+		e.project.getFilteredAndSortedProjects({ searchQuery, sortOption }),
+	);
 
-	const handleDuplicate = async () => {
-		await duplicateProjects({ editor, ids: selectedProjectIds });
-		clearSelectedProjects();
+	// Modals for CapCut features & project creation
+	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+	const [createModalMode, setCreateModalMode] = useState<ProjectMode>("standard");
+	const [createModalInitialName, setCreateModalInitialName] = useState("New Project");
+	const [isShortsModalOpen, setIsShortsModalOpen] = useState(false);
+	const [isRecorderOpen, setIsRecorderOpen] = useState(false);
+	const [isTtsOpen, setIsTtsOpen] = useState(false);
+
+	const { user } = useAuth();
+	const { isPro, openModal: openProModal } = useProStore();
+
+	const openCreateProject = (mode: ProjectMode = "standard", initialName = "New Project") => {
+		setCreateModalMode(mode);
+		setCreateModalInitialName(initialName);
+		setIsCreateModalOpen(true);
 	};
 
-	const handleDeleteClick = () => {
-		setIsDeleteDialogOpen(true);
+	const handleCreateNewProject = () => {
+		openCreateProject("standard", "New Project");
 	};
 
-	const handleDeleteConfirm = async () => {
-		await deleteProjects({ editor, ids: selectedProjectIds });
-		clearSelectedProjects();
-		setIsDeleteDialogOpen(false);
+	const displayName = user?.name || (user?.email ? user.email.split("@")[0] : "Creator");
+	const getInitials = (name?: string, email?: string) => {
+		if (name?.trim()) {
+			const parts = name.trim().split(/\s+/);
+			if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+			return name.slice(0, 2).toUpperCase();
+		}
+		if (email?.trim()) return email.slice(0, 2).toUpperCase();
+		return "CR";
 	};
+	const userInitials = getInitials(user?.name, user?.email);
 
-	const actionHandlers: Record<string, () => void> = {
-		duplicate: handleDuplicate,
-		delete: handleDeleteClick,
+	useEffect(() => {
+		setMounted(true);
+		if (!editor.project.getIsInitialized()) {
+			editor.project.loadAllProjects();
+		}
+	}, [editor.project]);
+
+	const toggleTheme = () => {
+		setTheme(theme === "dark" ? "light" : "dark");
 	};
 
 	return (
-		<>
-			<div className="flex items-center gap-2.5 px-3">
-				<div className="hidden sm:flex items-center gap-2.5">
-					{PROJECT_ACTIONS.map((action) => (
-						<Button
-							key={action.id}
-							size="icon"
-							variant={action.variant}
-							className="size-9"
-							onClick={actionHandlers[action.id]}
-						>
-							<HugeiconsIcon icon={action.icon} />
-						</Button>
-					))}
-				</div>
+		<AuthGuard fallbackMessage="Please sign in or create an account to view and create video projects.">
+			<div className="min-h-screen bg-background text-foreground flex transition-colors duration-200">
+				<MigrationDialog />
+				<StoragePersistenceDialog />
+				<ChangelogNotification />
 
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild className="sm:hidden">
-						<Button size="icon" variant="outline" className="size-9">
-							<HugeiconsIcon icon={MoreHorizontalIcon} />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						{PROJECT_ACTIONS.map((action) => (
-							<DropdownMenuItem
-								key={action.id}
-								variant={action.id === "delete" ? "destructive" : undefined}
-								onClick={actionHandlers[action.id]}
+				{/* Feature Modals */}
+				<CreateProjectModal
+					isOpen={isCreateModalOpen}
+					onOpenChange={setIsCreateModalOpen}
+					initialMode={createModalMode}
+					initialName={createModalInitialName}
+				/>
+				<VideoToShortsModal
+					isOpen={isShortsModalOpen}
+					onOpenChange={setIsShortsModalOpen}
+				/>
+				<ScreenRecorderModal
+					isOpen={isRecorderOpen}
+					onOpenChange={setIsRecorderOpen}
+				/>
+				<TextToSpeechModal
+					isOpen={isTtsOpen}
+					onOpenChange={setIsTtsOpen}
+				/>
+				<ProUpgradeModal />
+
+				{/* Left Sidebar (Orange Brand & Adaptive Theme) */}
+				<aside className="w-60 bg-card border-r border-border flex flex-col shrink-0 min-h-screen p-4 justify-between hidden md:flex">
+					<div className="flex flex-col gap-5">
+						{/* Brand & User Profile Card */}
+						<div className="flex flex-col gap-3">
+							<Link href="/" className="flex items-center gap-2.5 px-1.5 cursor-pointer">
+								<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-orange-500/20">
+									AC
+								</div>
+								<span className="font-bold text-base tracking-tight cursor-pointer">
+									AmberCut
+								</span>
+							</Link>
+
+							{/* User Pro Card */}
+							<div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between gap-2 mt-1 hover:border-orange-500/30 transition-colors">
+								<div className="flex items-center gap-2.5 min-w-0">
+									{user?.image ? (
+										<Image
+											src={user.image}
+											alt={displayName}
+											width={32}
+											height={32}
+											className="size-8 rounded-full object-cover ring-1 ring-orange-500/30 shrink-0"
+										/>
+									) : (
+										<div className="size-8 rounded-full bg-gradient-to-tr from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm shadow-orange-500/20">
+											{userInitials}
+										</div>
+									)}
+									<div className="flex flex-col min-w-0">
+										<span className="text-xs font-semibold truncate text-foreground">
+											{displayName}
+										</span>
+										<span className="text-[10px] text-muted-foreground truncate">
+											{isPro ? "Pro Member" : "Free Creator"}
+										</span>
+									</div>
+								</div>
+								<button
+									type="button"
+									onClick={openProModal}
+									className={`px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
+										isPro
+											? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border border-emerald-500/30"
+											: "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white"
+									}`}
+								>
+									<Crown className="size-3" />
+									{isPro ? "PRO" : "Upgrade"}
+								</button>
+							</div>
+						</div>
+
+						{/* Navigation Groups */}
+						<div className="flex flex-col gap-4">
+							{/* Video Editing */}
+							<div className="flex flex-col gap-1">
+								<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2.5">
+									Video editing
+								</span>
+								<Link
+									href="/projects"
+									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 font-semibold text-xs transition-colors cursor-pointer"
+								>
+									<Home className="size-4 text-orange-500" />
+									<span>Home</span>
+								</Link>
+								<button
+									type="button"
+									onClick={() => toast.info("Templates coming soon!")}
+									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
+								>
+									<LayoutTemplate className="size-4" />
+									<span>Templates</span>
+								</button>
+							</div>
+
+							{/* AI Tools Hub */}
+							<div className="flex flex-col gap-1">
+								<div className="flex items-center justify-between px-2.5">
+									<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+										AI Tools
+									</span>
+									<span className="text-[9px] bg-orange-500/15 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded font-bold">
+										NEW
+									</span>
+								</div>
+
+								{/* Screen Recorder Trigger */}
+								<button
+									type="button"
+									onClick={() => setIsRecorderOpen(true)}
+									className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+								>
+									<div className="flex items-center gap-2.5">
+										<Monitor className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
+										<span>Record Screen</span>
+									</div>
+									<Badge className="bg-red-500/15 text-red-500 text-[9px] h-4 px-1 font-semibold border-none rounded">
+										PiP
+									</Badge>
+								</button>
+
+								{/* Text to Speech Trigger */}
+								<button
+									type="button"
+									onClick={() => setIsTtsOpen(true)}
+									className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+								>
+									<div className="flex items-center gap-2.5">
+										<Volume2 className="size-4 text-amber-500 group-hover:scale-105 transition-transform" />
+										<span>Text to Speech</span>
+									</div>
+									<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 text-[9px] h-4 px-1 font-semibold border-none rounded">
+										AI
+									</Badge>
+								</button>
+
+								<button
+									type="button"
+									onClick={() => setIsShortsModalOpen(true)}
+									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+								>
+									<Scissors className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
+									<span>Video to Shorts</span>
+								</button>
+
+								<button
+									type="button"
+									onClick={() =>
+										toast.info("Select audio file in the editor to run voice separation.")
+									}
+									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
+								>
+									<Mic className="size-4" />
+									<span>Voice Separation</span>
+								</button>
+							</div>
+						</div>
+					</div>
+
+					{/* Bottom Sidebar Promos & Theme Toggle */}
+					<div className="flex flex-col gap-2.5">
+						{/* Theme Toggle Button */}
+						<div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border border-border">
+							<span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+								{mounted && theme === "dark" ? (
+									<Moon className="size-3.5 text-orange-400" />
+								) : (
+									<Sun className="size-3.5 text-amber-500" />
+								)}
+								<span>{mounted && theme === "dark" ? "Dark Mode" : "Light Mode"}</span>
+							</span>
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={toggleTheme}
+								className="h-6 px-2 text-[10px] font-semibold text-foreground hover:bg-background rounded cursor-pointer"
 							>
-								<HugeiconsIcon icon={action.icon} />
-								{action.label}
-							</DropdownMenuItem>
-						))}
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</div>
+								Switch
+							</Button>
+						</div>
 
-			<DeleteProjectDialog
-				isOpen={isDeleteDialogOpen}
-				onOpenChange={setIsDeleteDialogOpen}
-				projectNames={selectedProjectNames}
-				onConfirm={handleDeleteConfirm}
-			/>
-		</>
+						{/* AmberCut Pro Subscription Card */}
+						<div className="p-3.5 rounded-xl bg-gradient-to-br from-orange-500/15 via-amber-500/5 to-transparent border border-orange-500/25 flex flex-col gap-2 relative overflow-hidden group shadow-xs">
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-1.5">
+									<div className="size-6 rounded-lg bg-orange-500/20 text-orange-500 flex items-center justify-center">
+										<Sparkles className="size-3.5" />
+									</div>
+									<span className="text-xs font-bold text-foreground">AmberCut Pro</span>
+								</div>
+								<Badge className="bg-orange-500 text-white text-[9px] h-4 px-1.5 font-bold border-none rounded">
+									{isPro ? "ACTIVE" : "PRO"}
+								</Badge>
+							</div>
+							<p className="text-[11px] text-muted-foreground leading-relaxed">
+								{isPro
+									? "You have full access to 4K 60fps exports, AI captions & cloud sync."
+									: "Upgrade for 4K 60fps exports, AI captions, voice separation & unlimited cloud sync."}
+							</p>
+							<Button
+								size="sm"
+								onClick={openProModal}
+								className="w-full h-7 text-[11px] font-semibold bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-xs rounded-lg cursor-pointer"
+							>
+								{isPro ? "Manage Subscription" : "Upgrade to Pro"}
+							</Button>
+						</div>
+
+						<div className="flex items-center justify-between px-1.5 text-[10px] text-muted-foreground">
+							<span className="flex items-center gap-1.5">
+								<HardDrive className="size-3 text-orange-500" />
+								Device Storage
+							</span>
+							<span className="text-emerald-500 font-medium">Ready</span>
+						</div>
+					</div>
+				</aside>
+
+				{/* Main Content Dashboard */}
+				<div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+					{/* Top Header Bar with Theme Switcher */}
+					<header className="sticky top-0 z-20 px-6 py-3 bg-background/90 backdrop-blur-md border-b border-border flex items-center justify-between gap-4">
+						<div className="flex items-center gap-2 text-xs">
+							<span className="font-semibold text-foreground">Home</span>
+							<span className="text-muted-foreground/40">/</span>
+							<span className="text-muted-foreground">Projects</span>
+						</div>
+
+						<div className="flex items-center gap-3">
+							<div className="relative w-56 md:w-72">
+								<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+								<Input
+									placeholder="Search projects..."
+									value={searchQuery}
+									onChange={(e) =>
+										useProjectsStore.getState().setSearchQuery({
+											query: e.target.value,
+										})
+									}
+									className="bg-muted/40 border-border pl-8 h-8 text-xs rounded-lg text-foreground placeholder:text-muted-foreground focus-visible:ring-orange-500"
+								/>
+							</div>
+
+							{/* Theme Switcher in Header */}
+							<Button
+								variant="outline"
+								size="icon"
+								onClick={toggleTheme}
+								className="size-8 rounded-lg border-border text-foreground hover:bg-muted"
+								aria-label="Toggle theme"
+							>
+								{mounted && theme === "dark" ? (
+									<Sun className="size-3.5 text-amber-400" />
+								) : (
+									<Moon className="size-3.5 text-orange-500" />
+								)}
+							</Button>
+
+							<Button
+								onClick={handleCreateNewProject}
+								size="sm"
+								className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs h-8 px-3.5 rounded-lg shadow-sm gap-1.5"
+							>
+								<Plus className="size-3.5" />
+								New Project
+							</Button>
+						</div>
+					</header>
+
+					{/* Dashboard Body */}
+					<main className="p-5 md:p-8 lg:p-10 flex flex-col gap-7 max-w-[1700px] mx-auto w-full">
+						{/* 1. Brand Orange Hero Banner & Spotlight Card (Reduced Radius) */}
+						<div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+							{/* Large Glowing Orange Hero Banner */}
+							<div
+								onClick={() => openCreateProject("standard", "New Project")}
+								className="lg:col-span-3 relative h-44 md:h-48 rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 p-6 flex flex-col justify-center items-center text-center cursor-pointer shadow-lg shadow-orange-500/15 overflow-hidden group hover:opacity-95 transition-all"
+							>
+								<div className="absolute inset-0 bg-radial from-white/20 to-transparent pointer-events-none" />
+
+								<div className="relative z-10 flex flex-col items-center gap-2.5">
+									<div className="size-12 rounded-xl bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+										<Plus className="size-7 stroke-[2.5]" />
+									</div>
+									<h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+										Create project
+									</h2>
+									<p className="text-xs text-white/90 font-medium max-w-md">
+										Full-featured timeline with GPU shaders, 4K composition, and zero lag.
+									</p>
+								</div>
+							</div>
+
+							{/* Side Spotlight Card */}
+							<div
+								onClick={() => setIsRecorderOpen(true)}
+								className="h-44 md:h-48 rounded-xl bg-card border border-border p-4 flex flex-col justify-between cursor-pointer hover:border-orange-500/50 transition-all group shadow-xs"
+							>
+								<div className="flex items-start justify-between">
+									<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border-none font-semibold text-[10px] rounded-md">
+										SMART RECORDER
+									</Badge>
+									<div className="size-7 rounded-full bg-muted flex items-center justify-center text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors">
+										<ChevronRight className="size-3.5" />
+									</div>
+								</div>
+
+								<div className="flex flex-col gap-1">
+									<h3 className="text-sm font-bold text-foreground group-hover:text-orange-500 transition-colors">
+										Screen + Webcam PiP
+									</h3>
+									<p className="text-[11px] text-muted-foreground leading-relaxed">
+										Record launch demos with camera bubble and dynamic zoom focus.
+									</p>
+								</div>
+
+								<Button
+									size="sm"
+									variant="outline"
+									className="border-border text-foreground hover:bg-muted text-xs h-7 rounded-lg w-full"
+								>
+									Launch Studio
+								</Button>
+							</div>
+						</div>
+
+						{/* 2. Quick Action Tools Row */}
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+							{/* AI Video Maker */}
+							<div
+								onClick={() => openCreateProject("ai-video", "AI Video Assembly")}
+								className="p-3.5 rounded-lg bg-card border border-border hover:border-orange-500/40 cursor-pointer flex items-center justify-between group transition-all shadow-xs"
+							>
+								<div className="flex items-center gap-3">
+									<div className="size-10 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 group-hover:scale-105 transition-transform">
+										<Wand2 className="size-4.5" />
+									</div>
+									<div className="flex flex-col">
+										<div className="flex items-center gap-1.5">
+											<span className="text-xs font-semibold text-foreground">
+												AI video maker
+											</span>
+											<span className="text-[9px] bg-orange-500/15 text-orange-600 dark:text-orange-400 px-1 py-0.2 rounded font-bold">
+												AI
+											</span>
+										</div>
+										<span className="text-[11px] text-muted-foreground">
+											Assemble and cut video clips automatically
+										</span>
+									</div>
+								</div>
+								<ChevronRight className="size-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+							</div>
+
+							{/* Record Screen */}
+							<div
+								onClick={() => setIsRecorderOpen(true)}
+								className="p-3.5 rounded-lg bg-card border border-border hover:border-orange-500/40 cursor-pointer flex items-center justify-between group transition-all shadow-xs"
+							>
+								<div className="flex items-center gap-3">
+									<div className="size-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-105 transition-transform">
+										<Monitor className="size-4.5" />
+									</div>
+									<div className="flex flex-col">
+										<div className="flex items-center gap-1.5">
+											<span className="text-xs font-semibold text-foreground">
+												Record screen
+											</span>
+											<span className="text-[9px] bg-red-500/15 text-red-500 px-1 py-0.2 rounded font-bold">
+												HOT
+											</span>
+										</div>
+										<span className="text-[11px] text-muted-foreground">
+											Picture-in-picture camera + launch zoom
+										</span>
+									</div>
+								</div>
+								<ChevronRight className="size-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+							</div>
+						</div>
+
+						{/* 3. "More Tools" Strip */}
+						<div className="flex flex-col gap-2.5">
+							<h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+								More tools
+							</h3>
+
+							<div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+								{[
+									{
+										id: "shorts",
+										title: "Long to shorts",
+										icon: Scissors,
+										badge: "AI",
+										color: "bg-orange-500/10 text-orange-500",
+										action: () => setIsShortsModalOpen(true),
+									},
+									{
+										id: "aivideo",
+										title: "AI video",
+										icon: Video,
+										badge: "AI",
+										color: "bg-amber-500/10 text-amber-500",
+										action: () => openCreateProject("ai-video", "AI Cinematic Reel"),
+									},
+									{
+										id: "aiimage",
+										title: "AI image",
+										icon: ImageIcon,
+										badge: "AI",
+										color: "bg-rose-500/10 text-rose-500",
+										action: () => openCreateProject("ai-image", "AI Image Showcase"),
+									},
+									{
+										id: "translator",
+										title: "Video translator",
+										icon: Globe,
+										badge: "AI",
+										color: "bg-emerald-500/10 text-emerald-500",
+										action: () =>
+											toast.info(
+												"Open video in editor to run AI subtitles & translation.",
+											),
+									},
+									{
+										id: "dialogue",
+										title: "AI dialogue",
+										icon: MessageSquare,
+										badge: "AI",
+										color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+										action: () => setIsTtsOpen(true),
+									},
+									{
+										id: "fashion",
+										title: "AI model",
+										icon: Shirt,
+										badge: "AI",
+										color: "bg-purple-500/10 text-purple-500",
+										action: () => openCreateProject("ai-model", "AI Fashion Showcase"),
+									},
+									{
+										id: "tts",
+										title: "Text to speech",
+										icon: Volume2,
+										badge: "AI",
+										color: "bg-orange-500/10 text-orange-500",
+										action: () => setIsTtsOpen(true),
+									},
+								].map((tool) => {
+									const Icon = tool.icon;
+									return (
+										<div
+											key={tool.id}
+											onClick={tool.action}
+											className="p-3 rounded-lg bg-card border border-border hover:border-orange-500/40 cursor-pointer flex flex-col items-center text-center gap-1.5 group transition-all shadow-xs"
+										>
+											<div className="relative">
+												<div
+													className={`size-9 rounded-lg ${tool.color} flex items-center justify-center group-hover:scale-105 transition-transform`}
+												>
+													<Icon className="size-4.5" />
+												</div>
+												<span className="absolute -top-1 -right-1 text-[8px] bg-orange-500/20 text-orange-600 dark:text-orange-400 px-1 rounded font-bold border border-orange-500/20">
+													{tool.badge}
+												</span>
+											</div>
+											<span className="text-[11px] font-medium text-foreground line-clamp-1 group-hover:text-orange-500">
+												{tool.title}
+											</span>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* 4. Projects Section */}
+						<div className="flex flex-col gap-3.5 mt-1">
+							{/* Toolbar */}
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
+								<div className="flex items-center gap-2">
+									<h2 className="text-base font-bold text-foreground">Projects</h2>
+									<Badge className="bg-muted text-muted-foreground border-none text-[11px] rounded-md px-1.5 py-0.2">
+										{projectsToDisplay.length}
+									</Badge>
+								</div>
+
+								<div className="flex items-center gap-2">
+									{/* Sort dropdown */}
+									<SortDropdown>
+										<Button
+											variant="outline"
+											size="sm"
+											className="border-border text-foreground hover:bg-muted text-xs h-7 px-2.5 rounded-lg gap-1.5"
+										>
+											<ArrowUpDown className="size-3 text-orange-500" />
+											<span>Sort: {SORT_LABELS[sortKey]}</span>
+										</Button>
+									</SortDropdown>
+
+									{/* View mode toggle */}
+									<div className="flex items-center bg-muted/50 border border-border rounded-lg p-0.5">
+										<button
+											type="button"
+											onClick={() =>
+												useProjectsStore.getState().setViewMode({
+													viewMode: "grid",
+												})
+											}
+											className={`p-1 rounded-md ${
+												viewMode === "grid"
+													? "bg-background text-foreground shadow-xs"
+													: "text-muted-foreground hover:text-foreground"
+											}`}
+											aria-label="Grid view"
+										>
+											<LayoutGrid className="size-3.5" />
+										</button>
+										<button
+											type="button"
+											onClick={() =>
+												useProjectsStore.getState().setViewMode({
+													viewMode: "list",
+												})
+											}
+											className={`p-1 rounded-md ${
+												viewMode === "list"
+													? "bg-background text-foreground shadow-xs"
+													: "text-muted-foreground hover:text-foreground"
+											}`}
+											aria-label="List view"
+										>
+											<List className="size-3.5" />
+										</button>
+									</div>
+								</div>
+							</div>
+
+							{/* Projects List/Grid Display */}
+							{isLoading || !isInitialized ? (
+								<ProjectsSkeleton />
+							) : projectsToDisplay.length === 0 ? (
+								<EmptyState onCreateNew={handleCreateNewProject} />
+							) : (
+								<div
+									className={
+										viewMode === "grid"
+											? "grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+											: "flex flex-col gap-2"
+									}
+								>
+									{projectsToDisplay.map((project) => (
+										<ProjectItem
+											key={project.id}
+											project={project}
+											allProjectIds={projectsToDisplay.map((p) => p.id)}
+										/>
+									))}
+								</div>
+							)}
+						</div>
+					</main>
+				</div>
+			</div>
+		</AuthGuard>
 	);
 }
 
@@ -477,7 +732,7 @@ function SortDropdown({ children }: { children: React.ReactNode }) {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-			<DropdownMenuContent className="w-48" align="center">
+			<DropdownMenuContent className="w-44 bg-card border-border text-foreground" align="end">
 				<DropdownMenuCheckboxItem
 					checked={sortKey === "createdAt"}
 					onCheckedChange={() => setSortKey({ sortKey: "createdAt" })}
@@ -507,29 +762,6 @@ function SortDropdown({ children }: { children: React.ReactNode }) {
 	);
 }
 
-function NewProjectButton() {
-	const editor = useEditor();
-	const router = useRouter();
-
-	const handleCreateProject = async () => {
-		const projectId = await editor.project.createNewProject({
-			name: "New project",
-		});
-		router.push(`/editor/${projectId}`);
-	};
-
-	return (
-		<Button
-			size="lg"
-			className="flex px-5 md:px-6"
-			onClick={handleCreateProject}
-		>
-			<span className="text-sm font-medium hidden md:block">New project</span>
-			<span className="text-sm font-medium block md:hidden">New</span>
-		</Button>
-	);
-}
-
 function ProjectItem({
 	project,
 	allProjectIds,
@@ -545,25 +777,25 @@ function ProjectItem({
 	} = useProjectsStore();
 	const selectedProjectIdSet = new Set(selectedProjectIds);
 	const isSelected = selectedProjectIdSet.has(project.id);
-	const selectedProjectCount = selectedProjectIds.length;
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 	const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
 	const editor = useEditor();
 	const durationLabel = formatProjectDuration({ duration: project.duration });
-	const isMultiSelect = selectedProjectCount > 1;
 	const isGridView = viewMode === "grid";
 
 	const handleRename = () => setIsRenameDialogOpen(true);
 	const handleDuplicate = async () => {
-		await duplicateProjects({ editor, ids: [project.id] });
+		await editor.project.duplicateProjects({ ids: [project.id] });
+		toast.success("Project duplicated!");
 	};
 	const handleDeleteClick = () => setIsDeleteDialogOpen(true);
 	const handleInfoClick = () => setIsInfoDialogOpen(true);
 	const handleDeleteConfirm = async () => {
-		await deleteProjects({ editor, ids: [project.id] });
+		await editor.project.deleteProjects({ ids: [project.id] });
 		setIsDeleteDialogOpen(false);
+		toast.success("Project deleted.");
 	};
 
 	const handleCheckboxChange = ({
@@ -580,161 +812,222 @@ function ProjectItem({
 		setProjectSelected({ projectId: project.id, isSelected: checked });
 	};
 
-	const gridContent = (
-		<Card className="bg-background overflow-hidden border-none p-0">
-			<div className="bg-muted relative aspect-video">
-				<div className="absolute inset-0">
-					{project.thumbnail ? (
-						<Image
-							src={project.thumbnail}
-							alt="Project thumbnail"
-							fill
-							className="object-cover"
-						/>
-					) : (
-						<div className="flex size-full items-center justify-center">
-							<OcVideoIcon className="text-muted-foreground size-12 shrink-0" />
-						</div>
-					)}
-				</div>
-
-				{durationLabel && (
-					<div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs font-semibold px-2 py-1 rounded-sm">
-						{durationLabel}
-					</div>
-				)}
-			</div>
-
-			<CardContent className="flex flex-col gap-2 px-0 pt-4">
-				<h3 className="group-hover:text-foreground/90 line-clamp-2 text-sm leading-snug font-medium">
-					{project.name}
-				</h3>
-				<div className="text-muted-foreground flex items-center gap-1.5 text-sm">
-					<HugeiconsIcon icon={Calendar04Icon} className="size-4" />
-					<span>Created {formatDate({ date: project.createdAt })}</span>
-				</div>
-			</CardContent>
-		</Card>
-	);
-
-	const listRowContent = (
-		<div className="flex items-center gap-3 flex-1 min-w-0">
-			<div className="bg-muted relative size-10 rounded overflow-hidden shrink-0">
-				{project.thumbnail ? (
-					<Image
-						src={project.thumbnail}
-						alt="Project thumbnail"
-						fill
-						className="object-cover"
-					/>
-				) : (
-					<div className="flex size-full items-center justify-center">
-						<OcVideoIcon className="text-muted-foreground size-5 shrink-0" />
-					</div>
-				)}
-			</div>
-
-			<h3 className="group-hover:text-foreground/90 text-sm font-medium truncate flex-1 min-w-0">
-				{project.name}
-			</h3>
-
-			<span className="text-muted-foreground text-sm shrink-0 hidden sm:block">
-				{durationLabel ?? "—"}
-			</span>
-
-			<span className="text-muted-foreground text-sm shrink-0 w-auto pl-8 text-right hidden xs:block">
-				{formatDate({ date: project.createdAt })}
-			</span>
-		</div>
-	);
-
-	const listContent = (
-		<div
-			className={`flex items-center gap-4 py-2 px-4 border-b border-border/50 ${
-				isSelected ? "bg-primary/5" : ""
-			}`}
-		>
-			<Checkbox
-				checked={isSelected}
-				onMouseDown={(event) => event.preventDefault()}
-				onClick={(event) => {
-					handleCheckboxChange({
-						checked: !isSelected,
-						shiftKey: event.shiftKey,
-					});
-				}}
-				onCheckedChange={() => {}}
-				className="size-5 shrink-0"
-			/>
-
-			<Link href={`/editor/${project.id}`} className="flex-1 min-w-0">
-				{listRowContent}
-			</Link>
-
-			{!isMultiSelect && (
-				<ProjectMenu
-					isOpen={isDropdownOpen}
-					onOpenChange={setIsDropdownOpen}
-					variant="list"
-					onRenameClick={handleRename}
-					onDuplicateClick={handleDuplicate}
-					onDeleteClick={handleDeleteClick}
-					onInfoClick={handleInfoClick}
-				/>
-			)}
-		</div>
-	);
-
 	return (
 		<>
 			<ContextMenu>
 				<ContextMenuTrigger asChild>
 					<div className="group relative">
 						{isGridView ? (
-							<>
-								<Link href={`/editor/${project.id}`} className="block">
-									{gridContent}
+							<div
+								className={`rounded-lg overflow-hidden bg-card border transition-all duration-200 ${
+									isSelected
+										? "border-orange-500 ring-2 ring-orange-500/20"
+										: "border-border hover:border-orange-500/40 hover:shadow-xs"
+								}`}
+							>
+								{/* Thumbnail */}
+								<Link href={`/editor/${project.id}`} className="block relative aspect-video bg-muted/40 overflow-hidden">
+									{project.thumbnail ? (
+										<Image
+											src={project.thumbnail}
+											alt="Project thumbnail"
+											fill
+											className="object-cover group-hover:scale-102 transition-transform duration-300"
+										/>
+									) : (
+										<div className="flex size-full flex-col items-center justify-center bg-gradient-to-br from-orange-500 via-amber-400 to-white/90 p-4 relative overflow-hidden group/thumb">
+											<div className="absolute inset-0 bg-radial from-white/30 to-transparent pointer-events-none" />
+											<div className="size-11 rounded-xl bg-white/25 backdrop-blur-md border border-white/40 shadow-sm flex items-center justify-center text-white font-black text-sm mb-1 group-hover/thumb:scale-110 transition-transform">
+												AC
+											</div>
+											<span className="text-[11px] font-bold text-white drop-shadow-xs truncate max-w-[85%] text-center">
+												{project.name}
+											</span>
+										</div>
+									)}
+
+									{/* Play Button Overlay */}
+									<div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+										<div className="size-10 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-md transform scale-90 group-hover:scale-100 transition-transform">
+											<Play className="size-4.5 fill-white ml-0.5" />
+										</div>
+									</div>
+
+									{/* Duration Badge */}
+									{durationLabel && (
+										<div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs text-white font-mono text-[10px] font-bold px-1.5 py-0.5 rounded">
+											{durationLabel}
+										</div>
+									)}
 								</Link>
 
+								{/* Checkbox */}
 								<Checkbox
 									checked={isSelected}
-									onMouseDown={(event) => event.preventDefault()}
-									onClick={(event) => {
+									onClick={(e) => {
+										e.stopPropagation();
 										handleCheckboxChange({
 											checked: !isSelected,
-											shiftKey: event.shiftKey,
+											shiftKey: e.shiftKey,
 										});
 									}}
-									onCheckedChange={() => {}}
-									className={`absolute z-10 size-5 top-3 left-3 ${
-										isSelected || isDropdownOpen
+									className={`absolute top-2 left-2 z-10 size-4 rounded ${
+										isSelected
 											? "opacity-100"
-											: "opacity-0 group-hover:opacity-100"
+											: "opacity-0 group-hover:opacity-100 transition-opacity"
 									}`}
 								/>
 
-								{!isMultiSelect && (
-									<ProjectMenu
-										isOpen={isDropdownOpen}
-										onOpenChange={setIsDropdownOpen}
-										onRenameClick={handleRename}
-										onDuplicateClick={handleDuplicate}
-										onDeleteClick={handleDeleteClick}
-										onInfoClick={handleInfoClick}
-									/>
-								)}
-							</>
+								{/* Details */}
+								<div className="p-3 flex items-center justify-between gap-2">
+									<Link href={`/editor/${project.id}`} className="flex flex-col min-w-0 flex-1">
+										<h3 className="text-xs font-semibold text-foreground truncate group-hover:text-orange-500 transition-colors">
+											{project.name}
+										</h3>
+										<span className="text-[10px] text-muted-foreground">
+											{formatDate({ date: project.createdAt })}
+										</span>
+									</Link>
+
+									<DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+										<DropdownMenuTrigger asChild>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="size-6 rounded text-muted-foreground hover:text-foreground"
+												onClick={(e) => e.stopPropagation()}
+											>
+												<MoreVertical className="size-3.5" />
+											</Button>
+										</DropdownMenuTrigger>
+										<DropdownMenuContent className="w-40 bg-card border-border text-foreground" align="end">
+											<DropdownMenuItem onClick={handleRename}>
+												<Edit2 className="size-3 mr-2 text-orange-500" />
+												Rename
+											</DropdownMenuItem>
+											<DropdownMenuItem onClick={handleDuplicate}>
+												<Copy className="size-3 mr-2 text-orange-500" />
+												Duplicate
+											</DropdownMenuItem>
+											<DropdownMenuItem onClick={handleInfoClick}>
+												<Info className="size-3 mr-2 text-orange-500" />
+												Info
+											</DropdownMenuItem>
+											<DropdownMenuItem variant="destructive" onClick={handleDeleteClick}>
+												<Trash2 className="size-3 mr-2" />
+												Delete
+											</DropdownMenuItem>
+										</DropdownMenuContent>
+									</DropdownMenu>
+								</div>
+							</div>
 						) : (
-							listContent
+							/* List Row View */
+							<div
+								className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
+									isSelected
+										? "bg-orange-500/10 border-orange-500"
+										: "bg-card border-border hover:border-orange-500/30"
+								}`}
+							>
+								<div className="flex items-center gap-3 min-w-0 flex-1">
+									<Checkbox
+										checked={isSelected}
+										onClick={(e) => {
+											e.stopPropagation();
+											handleCheckboxChange({
+												checked: !isSelected,
+												shiftKey: e.shiftKey,
+											});
+										}}
+										className="size-4 rounded"
+									/>
+									<Link
+										href={`/editor/${project.id}`}
+										className="relative size-10 rounded-md bg-muted/40 overflow-hidden shrink-0"
+									>
+										{project.thumbnail ? (
+											<Image
+												src={project.thumbnail}
+												alt="Thumbnail"
+												fill
+												className="object-cover"
+											/>
+										) : (
+											<div className="flex size-full items-center justify-center bg-gradient-to-br from-orange-500 via-amber-400 to-white/90 text-white font-black text-[10px] shadow-xs">
+												AC
+											</div>
+										)}
+									</Link>
+
+									<Link href={`/editor/${project.id}`} className="flex flex-col min-w-0 flex-1">
+										<h4 className="text-xs font-semibold text-foreground truncate hover:text-orange-500">
+											{project.name}
+										</h4>
+										<span className="text-[10px] text-muted-foreground">
+											Created {formatDate({ date: project.createdAt })}
+										</span>
+									</Link>
+								</div>
+
+								<div className="flex items-center gap-3">
+									<span className="text-xs text-muted-foreground font-mono">
+										{durationLabel ?? "00:00"}
+									</span>
+
+									<DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+										<DropdownMenuTrigger asChild>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="size-7 rounded text-muted-foreground hover:text-foreground"
+											>
+												<MoreVertical className="size-3.5" />
+											</Button>
+										</DropdownMenuTrigger>
+										<DropdownMenuContent className="w-40 bg-card border-border text-foreground" align="end">
+											<DropdownMenuItem onClick={handleRename}>
+												<Edit2 className="size-3 mr-2 text-orange-500" />
+												Rename
+											</DropdownMenuItem>
+											<DropdownMenuItem onClick={handleDuplicate}>
+												<Copy className="size-3 mr-2 text-orange-500" />
+												Duplicate
+											</DropdownMenuItem>
+											<DropdownMenuItem onClick={handleInfoClick}>
+												<Info className="size-3 mr-2 text-orange-500" />
+												Info
+											</DropdownMenuItem>
+											<DropdownMenuItem variant="destructive" onClick={handleDeleteClick}>
+												<Trash2 className="size-3 mr-2" />
+												Delete
+											</DropdownMenuItem>
+										</DropdownMenuContent>
+									</DropdownMenu>
+								</div>
+							</div>
 						)}
 					</div>
 				</ContextMenuTrigger>
-				<ProjectContextMenuContent
-					onRenameClick={handleRename}
-					onDuplicateClick={handleDuplicate}
-					onDeleteClick={handleDeleteClick}
-					onInfoClick={handleInfoClick}
-				/>
+				<ContextMenuContent className="bg-card border-border text-foreground">
+					<ContextMenuItem onClick={handleRename}>
+						<Edit2 className="size-3 mr-2 text-orange-500" />
+						Rename
+					</ContextMenuItem>
+					<ContextMenuItem onClick={handleDuplicate}>
+						<Copy className="size-3 mr-2 text-orange-500" />
+						Duplicate
+					</ContextMenuItem>
+					<ContextMenuItem onClick={handleInfoClick}>
+						<Info className="size-3 mr-2 text-orange-500" />
+						Info
+					</ContextMenuItem>
+					<ContextMenuSeparator />
+					<ContextMenuItem variant="destructive" onClick={handleDeleteClick}>
+						<Trash2 className="size-3 mr-2" />
+						Delete
+					</ContextMenuItem>
+				</ContextMenuContent>
 			</ContextMenu>
 
 			<RenameProjectDialog
@@ -742,8 +1035,9 @@ function ProjectItem({
 				onOpenChange={setIsRenameDialogOpen}
 				projectName={project.name}
 				onConfirm={async (newName) => {
-					await renameProject({ editor, id: project.id, name: newName });
+					await editor.project.renameProject({ id: project.id, name: newName });
 					setIsRenameDialogOpen(false);
+					toast.success("Project renamed.");
 				}}
 			/>
 
@@ -763,257 +1057,41 @@ function ProjectItem({
 	);
 }
 
-function ProjectContextMenuContent({
-	onRenameClick,
-	onDuplicateClick,
-	onDeleteClick,
-	onInfoClick,
-}: {
-	onRenameClick: () => void;
-	onDuplicateClick: () => void;
-	onDeleteClick: () => void;
-	onInfoClick: () => void;
-}) {
-	return (
-		<ContextMenuContent>
-			<ContextMenuItem
-				icon={<HugeiconsIcon icon={Edit03Icon} />}
-				onClick={onRenameClick}
-			>
-				Rename
-			</ContextMenuItem>
-			<ContextMenuItem
-				icon={<HugeiconsIcon icon={Copy01Icon} />}
-				onClick={onDuplicateClick}
-			>
-				Duplicate
-			</ContextMenuItem>
-			<ContextMenuItem
-				icon={<HugeiconsIcon icon={InformationCircleIcon} />}
-				onClick={onInfoClick}
-			>
-				Info
-			</ContextMenuItem>
-			<ContextMenuSeparator />
-			<ContextMenuItem
-				variant="destructive"
-				icon={<HugeiconsIcon icon={Delete02Icon} />}
-				onClick={onDeleteClick}
-			>
-				Delete
-			</ContextMenuItem>
-		</ContextMenuContent>
-	);
-}
-
-function ProjectMenu({
-	isOpen,
-	onOpenChange,
-	variant = "grid",
-	onRenameClick,
-	onDuplicateClick,
-	onDeleteClick,
-	onInfoClick,
-}: {
-	isOpen: boolean;
-	onOpenChange: (open: boolean) => void;
-	variant?: "grid" | "list";
-	onRenameClick: () => void;
-	onDuplicateClick: () => void;
-	onDeleteClick: () => void;
-	onInfoClick: () => void;
-}) {
-	const handleMenuClick = ({
-		event,
-	}: {
-		event: MouseEvent<HTMLButtonElement>;
-	}) => {
-		event.preventDefault();
-		event.stopPropagation();
-	};
-
-	const handleMenuKeyDown = ({
-		event,
-	}: {
-		event: KeyboardEvent<HTMLButtonElement>;
-	}) => {
-		if (event.key !== "Enter" && event.key !== " ") {
-			return;
-		}
-		event.preventDefault();
-		event.stopPropagation();
-	};
-
-	const handleRename = () => {
-		onRenameClick();
-		onOpenChange(false);
-	};
-
-	const handleDuplicate = () => {
-		onDuplicateClick();
-		onOpenChange(false);
-	};
-
-	const handleDeleteClick = () => {
-		onDeleteClick();
-		onOpenChange(false);
-	};
-
-	const handleInfoClick = () => {
-		onInfoClick();
-		onOpenChange(false);
-	};
-
-	const isGrid = variant === "grid";
-
-	return (
-		<DropdownMenu open={isOpen} onOpenChange={onOpenChange}>
-			<DropdownMenuTrigger asChild>
-				<Button
-					variant="background"
-					className={
-						isGrid
-							? `absolute z-10 top-3 right-3 ${isOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`
-							: "!bg-transparent !shadow-none"
-					}
-					size="icon"
-					aria-label="Project menu"
-					onClick={(event) =>
-						handleMenuClick({
-							event: event as unknown as MouseEvent<HTMLButtonElement>,
-						})
-					}
-					onMouseDown={(event) => event.stopPropagation()}
-					onKeyDown={(event) =>
-						handleMenuKeyDown({
-							event: event as unknown as KeyboardEvent<HTMLButtonElement>,
-						})
-					}
-				>
-					<HugeiconsIcon
-						icon={MoreHorizontalIcon}
-						className="text-foreground"
-						aria-hidden="true"
-					/>
-				</Button>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent className="w-48" align="end">
-				<DropdownMenuItem onClick={handleRename}>
-					<HugeiconsIcon icon={Edit03Icon} />
-					Rename
-				</DropdownMenuItem>
-				<DropdownMenuItem onClick={handleDuplicate}>
-					<HugeiconsIcon icon={Copy01Icon} />
-					Duplicate
-				</DropdownMenuItem>
-				<DropdownMenuItem onClick={handleInfoClick}>
-					<HugeiconsIcon icon={InformationCircleIcon} />
-					Info
-				</DropdownMenuItem>
-				<DropdownMenuItem variant="destructive" onClick={handleDeleteClick}>
-					<HugeiconsIcon icon={Delete02Icon} />
-					Delete
-				</DropdownMenuItem>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	);
-}
-
 function ProjectsSkeleton() {
-	const skeletonIds = Array.from(
-		{ length: 24 },
-		(_, index) => `skeleton-${index}`,
-	);
-
 	return (
-		<div className="px-4 xs:grid-cols-2 grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-4">
-			{skeletonIds.map((skeletonId) => (
-				<Card
-					key={skeletonId}
-					className="bg-background overflow-hidden border-none p-0"
+		<div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+			{Array.from({ length: 8 }).map((_, i) => (
+				<div
+					key={i}
+					className="rounded-lg bg-card border border-border overflow-hidden flex flex-col gap-2.5 p-3"
 				>
-					<div className="bg-muted relative aspect-video">
-						<div className="absolute inset-0">
-							<Skeleton className="bg-muted/50 size-full" />
-						</div>
-					</div>
-					<CardContent className="flex flex-col gap-2 px-0 pt-4">
-						<Skeleton className="bg-muted/50 h-4 w-3/4" />
-						<div className="text-muted-foreground flex items-center gap-1.5">
-							<Skeleton className="bg-muted/50 size-4" />
-							<Skeleton className="bg-muted/50 h-4 w-24" />
-						</div>
-					</CardContent>
-				</Card>
+					<Skeleton className="aspect-video w-full rounded-md bg-muted" />
+					<Skeleton className="h-3.5 w-3/4 rounded bg-muted" />
+					<Skeleton className="h-3 w-1/3 rounded bg-muted" />
+				</div>
 			))}
 		</div>
 	);
 }
 
-function EmptyState() {
-	const { searchQuery, setSearchQuery } = useProjectsStore();
-	const router = useRouter();
-	const editor = useEditor();
-	const savedProjects = editor.project.getSavedProjects();
-
-	const handleCreateProject = async () => {
-		try {
-			const projectId = await editor.project.createNewProject({
-				name: "New project",
-			});
-			router.push(`/editor/${projectId}`);
-		} catch (error) {
-			toast.error("Failed to create project", {
-				description:
-					error instanceof Error ? error.message : "Please try again",
-			});
-		}
-	};
-
-	if (savedProjects.length > 0) {
-		return (
-			<div className="flex flex-col items-center justify-center gap-5 py-16 text-center">
-				<div className="flex flex-col items-center gap-8">
-					<HugeiconsIcon
-						icon={Search01Icon}
-						className="text-muted-foreground size-16 bg-accent/35 border rounded-md p-4"
-					/>
-					<div className="flex flex-col items-center gap-3">
-						<h3 className="text-lg font-medium">No results found</h3>
-						<p className="text-muted-foreground max-w-md">
-							Your search for "{searchQuery}" did not return any results.
-						</p>
-					</div>
-				</div>
-				<Button
-					onClick={() => setSearchQuery({ query: "" })}
-					variant="outline"
-					size="lg"
-				>
-					Clear search
-				</Button>
-			</div>
-		);
-	}
-
+function EmptyState({ onCreateNew }: { onCreateNew: () => void }) {
 	return (
-		<div className="flex flex-col items-center justify-center gap-6 py-16 text-center">
-			<div className="flex flex-col items-center gap-2">
-				<div className="bg-muted/30 flex size-16 items-center justify-center rounded-full">
-					<HugeiconsIcon
-						icon={Video01Icon}
-						className="text-muted-foreground size-8"
-					/>
-				</div>
-				<h3 className="text-lg font-medium">No projects yet</h3>
-				<p className="text-muted-foreground max-w-md">
-					Start creating your first project. Import media, edit, and export your
-					videos. All privately.
+		<div className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-xl bg-card border border-border gap-3.5">
+			<div className="size-12 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center">
+				<FolderPlus className="size-6" />
+			</div>
+			<div className="flex flex-col gap-1 max-w-sm">
+				<h3 className="text-sm font-bold text-foreground">No projects yet</h3>
+				<p className="text-xs text-muted-foreground">
+					Create your first video project or use the screen recorder to start creating.
 				</p>
 			</div>
-			<Button size="lg" className="gap-2" onClick={handleCreateProject}>
-				<HugeiconsIcon icon={PlusSignIcon} />
-				Create your first project
+			<Button
+				onClick={onCreateNew}
+				className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm"
+			>
+				<Plus className="size-3.5 mr-1.5" />
+				Create First Project
 			</Button>
 		</div>
 	);

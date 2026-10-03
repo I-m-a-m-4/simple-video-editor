@@ -35,60 +35,17 @@ export interface TelemetrySummary {
 const STORAGE_KEY = "opencut_telemetry_data_v1";
 
 const INITIAL_BASE: TelemetrySummary = {
-	smartSuggestionsCount: 142,
-	colorBetterCount: 89,
-	colorConsistentCount: 64,
-	volumeConsistentCount: 118,
-	voiceClearerCount: 173,
-	videoHdCount: 97,
-	faceRetouchCount: 52,
-	exportCount: 384,
-	audioTracksCount: 221,
-	transactionsCount: 14,
-	events: [
-		{
-			id: "evt-init-1",
-			type: "voice_clearer",
-			name: "Voice Clarity Filter",
-			timestamp: "2 mins ago",
-			details: "Web Audio DSP high-pass & vocal boost applied to dialogue track",
-		},
-		{
-			id: "evt-init-2",
-			type: "smart_suggestions",
-			name: "Smart Suggestions Analysis",
-			timestamp: "7 mins ago",
-			details: "AI timeline scan completed with 3 automated recommendations",
-		},
-		{
-			id: "evt-init-3",
-			type: "volume_consistent",
-			name: "Dynamic Gain Leveling",
-			timestamp: "12 mins ago",
-			details: "Multi-track audio normalized to standard 0 dB loudness target",
-		},
-		{
-			id: "evt-init-4",
-			type: "color_better",
-			name: "AI Color Enhancement",
-			timestamp: "25 mins ago",
-			details: "Vibrancy and saturation boosted across 4 video timeline clips",
-		},
-		{
-			id: "evt-init-5",
-			type: "face_retouch",
-			name: "Face Retouch & Smoothing",
-			timestamp: "42 mins ago",
-			details: "Facial contouring and skin smoothing applied to interview portrait",
-		},
-		{
-			id: "evt-init-6",
-			type: "video_hd",
-			name: "Super-Resolution HD",
-			timestamp: "1 hour ago",
-			details: "Upscale sharpening enabled for 4K video export canvas",
-		},
-	],
+	smartSuggestionsCount: 0,
+	colorBetterCount: 0,
+	colorConsistentCount: 0,
+	volumeConsistentCount: 0,
+	voiceClearerCount: 0,
+	videoHdCount: 0,
+	faceRetouchCount: 0,
+	exportCount: 0,
+	audioTracksCount: 0,
+	transactionsCount: 0,
+	events: [],
 };
 
 export function getTelemetryData(): TelemetrySummary {
@@ -152,3 +109,13 @@ export function recordTelemetryEvent(
 		console.warn("Failed to record telemetry:", e);
 	}
 }
+
+export function clearTelemetryData(): void {
+	if (typeof window === "undefined") return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_BASE));
+	} catch (e) {
+		console.warn("Failed to clear telemetry:", e);
+	}
+}
+

@@ -31,16 +31,33 @@ import {
 	PlayCircle,
 	Maximize2,
 	Check,
+	Palette,
+	Video,
+	Activity,
+	Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mediaTimeToSeconds } from "@/wasm";
+import {
+	analyzeTimelineWithGroq,
+	applySuggestionAction,
+	type SmartSuggestionItem,
+} from "@/ai/smart-suggestions";
+import {
+	CREATIVE_FILTERS,
+	ENDING_ANIMATIONS,
+	type CreativeFilter,
+	type EndingAnimationPreset,
+} from "@/effects/creative-filters";
 
 export function EmptyView() {
 	const [activeTab, setActiveTab] = useState<"project" | "details">("project");
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
 	const [analysisDone, setAnalysisDone] = useState(false);
-	const [smartSuggestions, setSmartSuggestions] = useState<string[]>([]);
+	const [smartSuggestions, setSmartSuggestions] = useState<SmartSuggestionItem[]>([]);
 	const [suggestionsApplied, setSuggestionsApplied] = useState(false);
+	const [activeFilterId, setActiveFilterId] = useState<string | null>(null);
+	const [activeAnimationId, setActiveAnimationId] = useState<string | null>(null);
 
 	// Global edit toggle states
 	const [colorsBetter, setColorsBetter] = useState(false);
@@ -123,78 +140,102 @@ export function EmptyView() {
 		return updates.length;
 	};
 
-	// 1. Smart Suggestions (AI Powered Analyze)
-	const handleAnalyze = () => {
+	// 1. Smart Suggestions (AI Powered Analyze with Groq API)
+	const handleAnalyze = async () => {
 		setIsAnalyzing(true);
 		setAnalysisDone(false);
 		setSuggestionsApplied(false);
-		toast.loading("AI Smart Suggestions: Scanning timeline clips & audio...", {
+		toast.loading("AI Smart Suggestions: Scanning timeline with Groq AI...", {
 			id: "ai-analyze",
 		});
 
-		setTimeout(() => {
+		try {
+			const suggestions = await analyzeTimelineWithGroq(editor, activeScene);
+			setIsAnalyzing(false);
+			setAnalysisDone(true);
+			setSmartSuggestions(suggestions);
+			toast.dismiss("ai-analyze");
+			toast.success(`Timeline analysis complete! ${suggestions.length} AI suggestions ready.`);
+			recordTelemetryEvent(
+				"smart_suggestions",
+				"AI Smart Suggestions Groq Scan",
+				`Analyzed timeline and found ${suggestions.length} recommendations`,
+			);
+		} catch (err) {
 			setIsAnalyzing(false);
 			setAnalysisDone(true);
 			toast.dismiss("ai-analyze");
+			toast.error("Analysis completed with fallback.");
+		}
+	};
 
-			const mainCount = activeScene?.tracks.main.elements.length ?? 0;
-			const audioCount =
-				activeScene?.tracks.audio.reduce((acc, t) => acc + t.elements.length, 0) ?? 0;
+	const handleApplyIndividualSuggestion = (id: string) => {
+		const target = smartSuggestions.find((s) => s.id === id);
+		if (!target || target.applied) return;
 
-			const suggestions = [
-				audioCount > 0 || mainCount > 0
-					? "Audio Dynamics: Peak differences detected across clips. Recommended 0 dB loudness normalization."
-					: "Audio Dynamics: Add background audio or voiceover to enhance audience engagement.",
-				mainCount > 1
-					? "Color & Exposure: Contrast and white balance variance between cuts can be auto-aligned (+22% consistency)."
-					: "Color & Vibrancy: Boost color saturation and mid-tone contrast for mobile displays.",
-				"Voice & Dialogue: Background noise suppression filter recommended for studio-grade vocal clarity.",
-			];
+		const count = applySuggestionAction(target.actionType, editor, activeScene);
+		setSmartSuggestions((prev) =>
+			prev.map((s) => (s.id === id ? { ...s, applied: true } : s)),
+		);
 
-			setSmartSuggestions(suggestions);
-			recordTelemetryEvent(
-				"smart_suggestions",
-				"AI Smart Suggestions Scan",
-				`Analyzed ${mainCount} video clips and ${audioCount} audio layers`,
-			);
-			toast.success("Timeline scan complete! 3 AI suggestions ready to apply.");
-		}, 1300);
+		if (target.actionType === "normalize_audio") setVolumeConsistent(true);
+		if (target.actionType === "enhance_color") setColorsBetter(true);
+		if (target.actionType === "voice_clarity") setVoiceClearer(true);
+		if (target.actionType === "cinematic_filter") setColorsConsistent(true);
+
+		toast.success(`Applied "${target.title}" on ${count} timeline clips!`);
 	};
 
 	const applyAllSmartSuggestions = () => {
-		// 1. Normalize audio
-		executeTimelineUpdate(
-			(el, trackType) => trackType === "audio" || el.type === "video",
-			() => ({
-				volume: 0,
-				enhanceAudio: true,
-				noiseReduction: true,
-				vocalBoost: true,
-			}),
-		);
-
-		// 2. Enhance color
-		executeTimelineUpdate(
-			(el) => el.type === "video" || el.type === "image",
-			() => ({
-				colorEnhance: true,
-				vibrancy: 1.2,
-				saturation: 1.15,
-			}),
-		);
+		let total = 0;
+		for (const sug of smartSuggestions) {
+			if (!sug.applied) {
+				total += applySuggestionAction(sug.actionType, editor, activeScene);
+			}
+		}
 
 		setVolumeConsistent(true);
 		setVoiceClearer(true);
 		setColorsBetter(true);
+		setColorsConsistent(true);
 		setSuggestionsApplied(true);
-
-		recordTelemetryEvent(
-			"smart_suggestions",
-			"Applied AI Suggestions",
-			"Normalized audio to 0 dB, enabled voice clarity & applied color enhancements across timeline",
-		);
+		setSmartSuggestions((prev) => prev.map((s) => ({ ...s, applied: true })));
 
 		toast.success("All AI optimizations applied across timeline clips!");
+	};
+
+	const handleApplyFilter = (filter: CreativeFilter) => {
+		setActiveFilterId(filter.id);
+		const count = executeTimelineUpdate(
+			(el) => el.type === "video" || el.type === "image",
+			() => ({
+				...filter.params,
+			}),
+		);
+		recordTelemetryEvent(
+			"color_better",
+			`Creative Filter: ${filter.name}`,
+			`Applied ${filter.name} on ${count} clips`,
+		);
+		toast.success(`Applied "${filter.name}" filter on ${count} clips!`);
+	};
+
+	const handleApplyEndingAnimation = (anim: EndingAnimationPreset) => {
+		setActiveAnimationId(anim.id);
+		const count = executeTimelineUpdate(
+			(el, trackType) => trackType === "main" && el.type === "video",
+			(el) => {
+				const durationSec = Number(mediaTimeToSeconds({ time: el.duration }).toFixed(2));
+				const animDuration = Math.min(anim.duration, Math.max(0.5, durationSec * 0.5));
+				return {
+					endingAnimation: anim.type,
+					endingAnimationDuration: animDuration,
+					endingFadeOut: anim.type === "fade_out",
+					endingZoomOut: anim.type === "zoom_out",
+				};
+			},
+		);
+		toast.success(`Applied "${anim.name}" ending animation on ${count} main video clips!`);
 	};
 
 	// 2. Make colors better (AI color enhancement & vibrancy)
@@ -440,26 +481,69 @@ export function EmptyView() {
 
 							{analysisDone && smartSuggestions.length > 0 && (
 								<div className="mt-2 space-y-2.5 pt-2 border-t border-border/40">
-									{smartSuggestions.map((item, idx) => (
+									{smartSuggestions.map((item) => (
 										<div
-											key={idx}
-											className="flex items-start gap-2 text-[11px] text-muted-foreground bg-muted/30 p-2 rounded-lg"
+											key={item.id}
+											className="flex flex-col gap-1.5 text-[11px] bg-muted/40 p-2.5 rounded-lg border border-border/50"
 										>
-											<CheckCircle2 className="size-3.5 text-emerald-500 shrink-0 mt-0.5" />
-											<span className="leading-snug">{item}</span>
+											<div className="flex items-center justify-between gap-1">
+												<div className="flex items-center gap-1.5 font-semibold text-foreground">
+													<CheckCircle2
+														className={`size-3.5 shrink-0 ${
+															item.applied ? "text-emerald-500" : "text-amber-500"
+														}`}
+													/>
+													<span>{item.title}</span>
+												</div>
+												<Badge
+													variant="secondary"
+													className="text-[9px] px-1.5 py-0 uppercase tracking-wider text-muted-foreground"
+												>
+													{item.category}
+												</Badge>
+											</div>
+
+											<p className="text-muted-foreground leading-snug pl-5">
+												{item.description}
+											</p>
+
+											<div className="flex items-center justify-between pt-1 pl-5">
+												<span className="text-[10px] text-amber-500 font-medium">
+													{item.impact}
+												</span>
+												<Button
+													size="sm"
+													variant={item.applied ? "outline" : "default"}
+													disabled={item.applied}
+													onClick={() => handleApplyIndividualSuggestion(item.id)}
+													className="h-6 text-[10px] px-2 py-0 gap-1 rounded-md"
+												>
+													{item.applied ? (
+														<>
+															<Check className="size-3 text-emerald-500" />
+															<span>Applied</span>
+														</>
+													) : (
+														<>
+															<Sparkles className="size-3 text-amber-400" />
+															<span>Apply</span>
+														</>
+													)}
+												</Button>
+											</div>
 										</div>
 									))}
 
 									<Button
 										size="sm"
 										onClick={applyAllSmartSuggestions}
-										disabled={suggestionsApplied}
+										disabled={suggestionsApplied || smartSuggestions.every((s) => s.applied)}
 										className="w-full h-8 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs rounded-lg shadow-xs flex items-center justify-center gap-1.5"
 									>
-										{suggestionsApplied ? (
+										{suggestionsApplied || smartSuggestions.every((s) => s.applied) ? (
 											<>
 												<Check className="size-3.5" />
-												<span>Optimizations Applied</span>
+												<span>All AI Improvements Applied</span>
 											</>
 										) : (
 											<>
@@ -597,6 +681,111 @@ export function EmptyView() {
 									</div>
 									<ChevronRight className="size-4 text-muted-foreground" />
 								</button>
+							</div>
+						</div>
+
+						{/* Cinematic Video & Image Filters Section */}
+						<div className="space-y-3">
+							<div className="flex items-center justify-between">
+								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-clash flex items-center gap-1.5">
+									<Palette className="size-3.5 text-amber-500" />
+									Cinematic Video Filters
+								</span>
+								<Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
+									Video &amp; Photo
+								</Badge>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								Apply curated color grades across all timeline clips with a single tap.
+							</p>
+
+							<div className="grid grid-cols-2 gap-2">
+								{CREATIVE_FILTERS.map((filter) => {
+									const isActive = activeFilterId === filter.id;
+									return (
+										<button
+											key={filter.id}
+											type="button"
+											onClick={() => handleApplyFilter(filter)}
+											className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+												isActive
+													? "border-amber-500/80 bg-amber-500/10 shadow-xs"
+													: "border-border/70 bg-card/40 hover:bg-muted/30"
+											}`}
+										>
+											<div className="flex items-center justify-between w-full mb-1">
+												<div
+													className="size-3 rounded-full"
+													style={{ backgroundColor: filter.iconColor }}
+												/>
+												{isActive && (
+													<Check className="size-3 text-amber-500" />
+												)}
+											</div>
+											<span className="text-xs font-semibold text-foreground">
+												{filter.name}
+											</span>
+											<span className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+												{filter.description}
+											</span>
+										</button>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* Ending & Outro Animations Section */}
+						<div className="space-y-3">
+							<div className="flex items-center justify-between">
+								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-clash flex items-center gap-1.5">
+									<Video className="size-3.5 text-blue-500" />
+									Ending Animations
+								</span>
+								<Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
+									Outro Presets
+								</Badge>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								Professional pre-made ending animations to smoothly conclude your video.
+							</p>
+
+							<div className="space-y-2">
+								{ENDING_ANIMATIONS.map((anim) => {
+									const isApplied = activeAnimationId === anim.id;
+									return (
+										<div
+											key={anim.id}
+											className="flex items-center justify-between p-2.5 rounded-xl border border-border/70 bg-card/40 hover:bg-muted/20 transition-all"
+										>
+											<div className="flex flex-col gap-0.5">
+												<span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+													<span>{anim.name}</span>
+													<span className="text-[10px] text-muted-foreground font-normal">
+														({anim.duration}s)
+													</span>
+												</span>
+												<span className="text-[10px] text-muted-foreground">
+													{anim.description}
+												</span>
+											</div>
+											<Button
+												size="sm"
+												variant={isApplied ? "outline" : "secondary"}
+												onClick={() => handleApplyEndingAnimation(anim)}
+												className="h-7 text-xs px-2.5 shrink-0 ml-2"
+											>
+												{isApplied ? (
+													<>
+														<Check className="size-3 text-emerald-500 mr-1" />
+														<span>Applied</span>
+													</>
+												) : (
+													<span>Add</span>
+												)}
+											</Button>
+										</div>
+									);
+								})}
 							</div>
 						</div>
 					</div>

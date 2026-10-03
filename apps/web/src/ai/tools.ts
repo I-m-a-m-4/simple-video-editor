@@ -14,6 +14,14 @@ import {
 	type MediaTime,
 	ZERO_MEDIA_TIME,
 } from "@/wasm";
+import {
+	buildLaunchVideoOnTimeline,
+	generateLaunchBlueprintWithGroq,
+	TYPESAFE_JEV_LAUNCH_BLUEPRINT,
+	LAUNCH_THEMES,
+	type LaunchThemeId,
+	type LaunchAspectRatio,
+} from "./launch-video";
 
 interface JsonSchemaProperty {
 	type: "string" | "number" | "boolean" | "array" | "object";
@@ -30,7 +38,7 @@ export interface AiToolDefinition {
 		properties: Record<string, JsonSchemaProperty>;
 		required?: string[];
 	};
-	execute: (args: Record<string, unknown>) => unknown;
+	execute: (args: Record<string, unknown>) => unknown | Promise<unknown>;
 }
 
 function getEditor(): EditorCore {
@@ -1030,6 +1038,274 @@ export const aiTools: AiToolDefinition[] = [
 			}
 			editor.command.redo();
 			return { ok: true };
+		},
+	},
+	{
+		name: "create_launch_video",
+		description:
+			"Build a complete, top-notch animated product launch video on the timeline with multiple scenes, kinetic headlines, badge pills, bento metric cards, and screen demo placeholders (e.g. for TypeSafe, Jev, SaaS apps).",
+		parameters: {
+			type: "object",
+			properties: {
+				prompt: {
+					type: "string",
+					description:
+						"The launch announcement, text, or prompt describing the product (e.g. TypeSafe Meet Jev, feature releases, benchmarks).",
+				},
+				theme: {
+					type: "string",
+					enum: [
+						"obsidian-amber",
+						"cyber-cyan",
+						"deep-violet",
+						"minimal-light",
+					],
+					description: "Visual color and typography theme for the launch video.",
+				},
+				aspectRatio: {
+					type: "string",
+					enum: ["16:9", "9:16", "1:1"],
+					description: "Aspect ratio for YouTube/Web (16:9), TikTok/Shorts (9:16), or Square (1:1).",
+				},
+			},
+			required: ["prompt"],
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const prompt = requireString(args, "prompt");
+			const theme = (optionalString(args, "theme") as LaunchThemeId) || "obsidian-amber";
+			const aspectRatio = (optionalString(args, "aspectRatio") as LaunchAspectRatio) || "16:9";
+
+			const blueprint = await generateLaunchBlueprintWithGroq({
+				prompt,
+				theme,
+				aspectRatio,
+			});
+
+			const result = await buildLaunchVideoOnTimeline({
+				editor,
+				blueprint,
+			});
+
+			return {
+				ok: true,
+				title: blueprint.title,
+				scenesCount: result.scenesCount,
+				totalDurationSec: result.totalDurationSec,
+				elementsCreated: result.elementsCreated,
+				bookmarksCreated: result.bookmarksCreated,
+				screenRecordingLinked: result.screenRecordingLinked,
+			};
+		},
+	},
+	{
+		name: "add_launch_badge",
+		description:
+			"Add a sleek animated pill badge on the timeline (e.g. [SYSTEM ONE MODEL], [OFFICIAL RELEASE], [BENCHMARK]).",
+		parameters: {
+			type: "object",
+			properties: {
+				text: { type: "string", description: "Badge text label" },
+				startTimeSec: { type: "number", description: "Start time in seconds" },
+				durationSec: { type: "number", description: "Duration in seconds (default 5)" },
+				color: { type: "string", description: "Hex text color (e.g. #f59e0b)" },
+				bgColor: { type: "string", description: "Background hex/rgba color" },
+			},
+			required: ["text"],
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const text = requireString(args, "text");
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+			const durationSec = optionalNumber(args, "durationSec") ?? 5;
+			const color = optionalString(args, "color") ?? "#f59e0b";
+			const bgColor = optionalString(args, "bgColor") ?? "rgba(245, 158, 11, 0.2)";
+
+			const element = buildTextElement({
+				raw: {
+					name: `Badge: ${text}`,
+					duration: fromSeconds(durationSec),
+					params: {
+						content: `  ${text.toUpperCase()}  `,
+						fontSize: 13,
+						fontWeight: "bold",
+						fontFamily: "Outfit",
+						color,
+						textAlign: "center",
+						"transform.positionX": 0,
+						"transform.positionY": -190,
+						"background.enabled": true,
+						"background.color": bgColor,
+						"background.cornerRadius": 16,
+						"background.paddingX": 16,
+						"background.paddingY": 7,
+						opacity: 0.95,
+					} as any,
+				},
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto", trackType: "text" },
+			});
+
+			return { ok: true, text, startTimeSec, durationSec };
+		},
+	},
+	{
+		name: "add_bento_stat_card",
+		description:
+			"Add a high-impact Bento metric / benchmark stat card to the video (e.g. 20–200x Faster, 40–1,000x Cheaper).",
+		parameters: {
+			type: "object",
+			properties: {
+				stat: { type: "string", description: "Metric number/stat (e.g. '20–200×')" },
+				label: { type: "string", description: "Metric label (e.g. 'FASTER')" },
+				description: { type: "string", description: "Secondary explanation" },
+				startTimeSec: { type: "number", description: "Start time in seconds" },
+				durationSec: { type: "number", description: "Duration in seconds" },
+				positionX: { type: "number", description: "X offset in pixels" },
+				positionY: { type: "number", description: "Y offset in pixels" },
+			},
+			required: ["stat", "label"],
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const stat = requireString(args, "stat");
+			const label = requireString(args, "label");
+			const description = optionalString(args, "description");
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+			const durationSec = optionalNumber(args, "durationSec") ?? 6;
+			const positionX = optionalNumber(args, "positionX") ?? 0;
+			const positionY = optionalNumber(args, "positionY") ?? 130;
+
+			const cardContent = `${stat}\n${label.toUpperCase()}${description ? `\n${description}` : ""}`;
+
+			const element = buildTextElement({
+				raw: {
+					name: `Bento: ${label}`,
+					duration: fromSeconds(durationSec),
+					params: {
+						content: cardContent,
+						fontSize: 20,
+						fontWeight: "bold",
+						fontFamily: "Outfit",
+						color: "#f59e0b",
+						textAlign: "center",
+						lineHeight: 1.25,
+						"transform.positionX": positionX,
+						"transform.positionY": positionY,
+						"background.enabled": true,
+						"background.color": "#18181b",
+						"background.cornerRadius": 16,
+						"background.paddingX": 24,
+						"background.paddingY": 18,
+						opacity: 0.95,
+					} as any,
+				},
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto", trackType: "text" },
+			});
+
+			return { ok: true, stat, label, startTimeSec, durationSec };
+		},
+	},
+	{
+		name: "add_screen_demo_slot",
+		description:
+			"Insert a dedicated screen recording / software demo video slot on the timeline (automatically linking recorded media if present).",
+		parameters: {
+			type: "object",
+			properties: {
+				label: { type: "string", description: "Title or label for the demo" },
+				startTimeSec: { type: "number", description: "Start time in seconds" },
+				durationSec: { type: "number", description: "Duration in seconds" },
+			},
+			required: ["label"],
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const label = requireString(args, "label");
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+			const durationSec = optionalNumber(args, "durationSec") ?? 7;
+
+			const mediaAssets = editor.media.getAssets();
+			const screenRecording = mediaAssets.find(
+				(a) =>
+					a.type === "video" &&
+					(a.name.toLowerCase().includes("screen") ||
+						a.name.toLowerCase().includes("recording") ||
+						a.name.toLowerCase().includes("demo")),
+			) || mediaAssets.find((a) => a.type === "video");
+
+			if (screenRecording) {
+				editor.timeline.insertElement({
+					element: {
+						type: "video",
+						mediaId: screenRecording.id,
+						name: screenRecording.name || label,
+						duration: fromSeconds(durationSec),
+						startTime: fromSeconds(startTimeSec),
+						trimStart: ZERO_MEDIA_TIME,
+						trimEnd: ZERO_MEDIA_TIME,
+						sourceDuration: fromSeconds(durationSec),
+						isSourceAudioEnabled: true,
+						hidden: false,
+						params: {
+							"transform.positionX": 0,
+							"transform.positionY": 120,
+							"transform.scaleX": 0.75,
+							"transform.scaleY": 0.75,
+							opacity: 1,
+						} as any,
+					},
+					placement: { mode: "auto", trackType: "video" },
+				});
+				return { ok: true, linkedAssetId: screenRecording.id, label };
+			}
+
+			const placeholderElement = buildTextElement({
+				raw: {
+					name: `[DEMO] ${label}`,
+					duration: fromSeconds(durationSec),
+					params: {
+						content: `▶ ${label.toUpperCase()}\n[Drop your Screen Recording or Code Demo Here]`,
+						fontSize: 16,
+						fontWeight: "bold",
+						fontFamily: "Outfit",
+						color: "#94a3b8",
+						textAlign: "center",
+						lineHeight: 1.4,
+						"transform.positionX": 0,
+						"transform.positionY": 120,
+						"background.enabled": true,
+						"background.color": "rgba(24, 24, 27, 0.9)",
+						"background.cornerRadius": 18,
+						"background.paddingX": 48,
+						"background.paddingY": 36,
+						opacity: 0.85,
+					} as any,
+				},
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element: placeholderElement,
+				placement: { mode: "auto", trackType: "text" },
+			});
+
+			return { ok: true, placeholder: true, label };
 		},
 	},
 ];

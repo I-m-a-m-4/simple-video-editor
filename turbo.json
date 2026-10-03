@@ -3,8 +3,10 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": [".next/**", "!.next/cache/**"],
+			"outputs": [".next/**", "!.next/cache/**", "out/**"],
 			"env": [
+				"TAURI_EXPORT",
+				"TAURI_ENV_PLATFORM",
 				"NODE_ENV",
 				"NEXT_PUBLIC_SITE_URL",
 				"NEXT_PUBLIC_MARBLE_API_URL",

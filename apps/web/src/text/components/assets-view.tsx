@@ -28,8 +28,8 @@ export function TextView() {
 			<DraggableItem
 				name="Default text"
 				preview={
-					<div className="bg-accent flex size-full items-center justify-center rounded">
-						<span className="text-xs select-none">Default text</span>
+					<div className="bg-accent flex size-full items-center justify-center rounded cursor-pointer hover:bg-accent/80 transition-colors">
+						<span className="text-xs select-none cursor-pointer font-medium">Default text</span>
 					</div>
 				}
 				dragData={{

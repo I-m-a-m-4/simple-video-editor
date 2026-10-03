@@ -34,6 +34,15 @@ export class MediaManager {
 			this.editor.project.ratchetFpsForImportedMedia({
 				importedAssets: [newAsset],
 			});
+
+			// Automatically use the first video's thumbnail as the project thumbnail
+			if (newAsset.type === "video" && newAsset.thumbnailUrl) {
+				const active = this.editor.project.getActiveOrNull();
+				if (active && active.metadata.id === projectId && !active.metadata.thumbnail) {
+					void this.editor.project.updateThumbnail({ thumbnail: newAsset.thumbnailUrl });
+				}
+			}
+
 			return newAsset;
 		} catch (error) {
 			console.error("Failed to save media asset:", error);

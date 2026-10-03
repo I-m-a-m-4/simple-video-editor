@@ -35,6 +35,8 @@ import {
 import { useEditor } from "@/editor/use-editor";
 import { DEFAULT_EXPORT_OPTIONS } from "@/export/defaults";
 
+import { toast } from "sonner";
+
 function isExportFormat(value: string): value is ExportFormat {
 	return EXPORT_FORMAT_VALUES.some((formatValue) => formatValue === value);
 }
@@ -47,11 +49,16 @@ export function ExportButton() {
 	const [isExportPopoverOpen, setIsExportPopoverOpen] = useState(false);
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActiveOrNull());
+	const exportState = useEditor((e) => e.project.getExportState());
+	const { isExporting } = exportState;
 	const hasProject = !!activeProject;
 
 	const handlePopoverOpenChange = ({ open }: { open: boolean }) => {
+		if (!open && isExporting) {
+			// Do NOT close while export is actively in progress!
+			return;
+		}
 		if (!open) {
-			editor.project.cancelExport();
 			editor.project.clearExportState();
 		}
 		setIsExportPopoverOpen(open);
@@ -80,7 +87,9 @@ export function ExportButton() {
 				>
 					<div className="relative flex items-center gap-1.5 rounded-[0.6rem] bg-linear-270 from-[#2567EC] to-[#37B6F7] px-4 py-1 shadow-[0_1px_3px_0px_rgba(0,0,0,0.65)]">
 						<HugeiconsIcon icon={TransitionTopIcon} className="z-50 size-3.5" />
-						<span className="z-50 text-[0.875rem]">Export</span>
+						<span className="z-50 text-[0.875rem]">
+							{isExporting ? "Exporting..." : "Export"}
+						</span>
 						<div className="absolute top-0 left-0 z-10 flex size-full items-center justify-center rounded-[0.6rem] bg-linear-to-t from-white/0 to-white/50">
 							<div className="absolute top-[0.08rem] z-50 h-[calc(100%-2px)] w-[calc(100%-2px)] rounded-[0.6rem] bg-linear-270 from-[#2567EC] to-[#37B6F7]"></div>
 						</div>
@@ -114,38 +123,84 @@ function ExportPopover({
 	const handleExport = async () => {
 		if (!activeProject) return;
 
-		const result = await editor.project.export({
-			options: {
-				format,
-				quality,
-				fps: activeProject.settings.fps,
-				includeAudio: shouldIncludeAudio,
-			},
+		toast.loading("Exporting project... Your video is being rendered locally.", {
+			id: "export-progress-toast",
 		});
 
-		if (result.cancelled) {
-			editor.project.clearExportState();
-			return;
-		}
-
-		if (result.success && result.buffer) {
-			downloadBuffer({
-				buffer: result.buffer,
-				filename: `${activeProject.metadata.name}${getExportFileExtension({ format })}`,
-				mimeType: getExportMimeType({ format }),
+		try {
+			const result = await editor.project.export({
+				options: {
+					format,
+					quality,
+					fps: activeProject.settings.fps,
+					includeAudio: shouldIncludeAudio,
+				},
 			});
 
-			editor.project.clearExportState();
-			onOpenChange(false);
+			toast.dismiss("export-progress-toast");
+
+			if (result.cancelled) {
+				editor.project.clearExportState();
+				toast.info("Export cancelled.");
+				return;
+			}
+
+			if (result.success && result.buffer) {
+				const filename = `${activeProject.metadata.name}${getExportFileExtension({ format })}`;
+				const mimeType = getExportMimeType({ format });
+				downloadBuffer({
+					buffer: result.buffer,
+					filename,
+					mimeType,
+				});
+
+				toast.success("Project exported successfully! Video downloaded.", {
+					description: filename,
+					duration: 9000,
+					action: {
+						label: "Download Again",
+						onClick: () => {
+							downloadBuffer({
+								buffer: result.buffer!,
+								filename,
+								mimeType,
+							});
+						},
+					},
+				});
+
+				editor.project.clearExportState();
+				onOpenChange(false);
+			} else if (result.error) {
+				toast.error(`Export failed: ${result.error}`);
+			}
+		} catch (err) {
+			toast.dismiss("export-progress-toast");
+			const message = err instanceof Error ? err.message : String(err);
+			toast.error(`Export failed: ${message}`);
 		}
 	};
 
 	const handleCancel = () => {
 		editor.project.cancelExport();
+		editor.project.clearExportState();
+		toast.info("Export cancelled.");
 	};
 
 	return (
-		<PopoverContent className="bg-background mr-4 flex w-80 flex-col p-0">
+		<PopoverContent
+			className="bg-background mr-4 flex w-80 flex-col p-0 shadow-2xl border-border"
+			onPointerDownOutside={(e) => {
+				if (isExporting) {
+					e.preventDefault();
+				}
+			}}
+			onInteractOutside={(e) => {
+				if (isExporting) {
+					e.preventDefault();
+				}
+			}}
+		>
 			{exportResult && !exportResult.success ? (
 				<ExportError
 					error={exportResult.error || "Unknown error occurred"}
@@ -265,20 +320,23 @@ function ExportPopover({
 							<div className="space-y-4 p-3">
 								<div className="flex flex-col gap-2">
 									<div className="flex items-center justify-between text-center">
-										<p className="text-muted-foreground text-sm">
+										<p className="font-semibold text-primary text-sm">
 											{Math.round(progress * 100)}%
 										</p>
-										<p className="text-muted-foreground text-sm">100%</p>
+										<p className="text-muted-foreground text-xs">Rendering video frames...</p>
 									</div>
-									<Progress value={progress * 100} className="w-full" />
+									<Progress value={progress * 100} className="w-full h-2" />
+									<p className="text-[11px] text-muted-foreground bg-muted/40 p-2 rounded-md border border-border/50">
+										Export is locked in place so your video renders safely even if you move your mouse.
+									</p>
 								</div>
 
 								<Button
 									variant="outline"
-									className="w-full rounded-md"
+									className="w-full rounded-md text-destructive hover:bg-destructive/10"
 									onClick={handleCancel}
 								>
-									Cancel
+									Cancel Export
 								</Button>
 							</div>
 						)}

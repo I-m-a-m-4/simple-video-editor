@@ -6,7 +6,9 @@ import type {
 	TProjectSortOption,
 	TProjectSettings,
 	TTimelineViewState,
+	TCanvasSize,
 } from "@/project/types";
+import type { FrameRate } from "opencut-wasm";
 import type { ExportOptions, ExportResult, ExportState } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { toast } from "sonner";
@@ -79,7 +81,15 @@ export class ProjectManager {
 		await this.storageMigrationPromise;
 	}
 
-	async createNewProject({ name }: { name: string }): Promise<string> {
+	async createNewProject({
+		name,
+		canvasSize = DEFAULT_CANVAS_SIZE,
+		fps = DEFAULT_FPS,
+	}: {
+		name: string;
+		canvasSize?: TCanvasSize;
+		fps?: FrameRate;
+	}): Promise<string> {
 		const mainScene = buildDefaultScene({ name: "Main scene", isMain: true });
 		const newProject: TProject = {
 			metadata: {
@@ -92,8 +102,8 @@ export class ProjectManager {
 			scenes: [mainScene],
 			currentSceneId: mainScene.id,
 			settings: {
-				fps: DEFAULT_FPS,
-				canvasSize: DEFAULT_CANVAS_SIZE,
+				fps,
+				canvasSize,
 				canvasSizeMode: "preset",
 				lastCustomCanvasSize: null,
 				originalCanvasSize: null,

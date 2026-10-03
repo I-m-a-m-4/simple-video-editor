@@ -17,7 +17,9 @@ import {
 	Square,
 	Trash2,
 	Wrench,
+	Rocket,
 } from "lucide-react";
+import { LaunchVideoStudio } from "./launch-video-studio";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,9 +40,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const QUICK_ACTIONS = [
+	{ label: "🚀 TypeSafe / Jev Launch Video", prompt: "Create a complete animated launch video for TypeSafe announcing Jev, our first System One model." },
 	{ label: "Scan Timeline", prompt: "Inspect the timeline and summarize all clips, text, and tracks." },
-	{ label: "Split at Playhead", prompt: "Split the clip at the current playhead position." },
 	{ label: "Clean & Denoise Audio", prompt: "Enhance the audio quality and remove background noise for the clips on the timeline." },
+	{ label: "Split at Playhead", prompt: "Split the clip at the current playhead position." },
 	{ label: "Mute Audio", prompt: "Mute all audio tracks on the timeline." },
 	{ label: "Speed Up 1.5x", prompt: "Increase playback speed to 1.5x for selected elements." },
 	{ label: "Add Blur", prompt: "Apply a blur effect to the current video clip." },
@@ -58,6 +61,7 @@ export function AiAssistantView() {
 		clearMessages,
 	} = useAiStore();
 
+	const [activeTab, setActiveTab] = useState<"chat" | "launch">("chat");
 	const [input, setInput] = useState("");
 	const [showSettings, setShowSettings] = useState(!apiKey);
 	const [apiKeyDraft, setApiKeyDraft] = useState(apiKey);
@@ -201,8 +205,44 @@ export function AiAssistantView() {
 					</div>
 				)}
 
-				{/* Quick Action Chips */}
-				<div className="p-2 border-b bg-muted/15 flex gap-1.5 overflow-x-auto scrollbar-hidden shrink-0">
+				{/* Mode Switcher Tabs */}
+				<div className="flex border-b border-border bg-muted/20 px-3 py-1.5 gap-1 shrink-0">
+					<button
+						type="button"
+						onClick={() => setActiveTab("chat")}
+						className={cn(
+							"flex-1 text-xs py-1 px-2.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1.5",
+							activeTab === "chat"
+								? "bg-background text-foreground shadow-xs font-semibold"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<Bot className="size-3.5" />
+						Chat Copilot
+					</button>
+					<button
+						type="button"
+						onClick={() => setActiveTab("launch")}
+						className={cn(
+							"flex-1 text-xs py-1 px-2.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1.5",
+							activeTab === "launch"
+								? "bg-amber-500/20 text-amber-400 font-semibold shadow-xs border border-amber-500/30"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<Rocket className="size-3.5 text-amber-400" />
+						Launch Video Studio
+					</button>
+				</div>
+
+				{activeTab === "launch" ? (
+					<div className="flex-1 overflow-hidden">
+						<LaunchVideoStudio />
+					</div>
+				) : (
+					<>
+						{/* Quick Action Chips */}
+						<div className="p-2 border-b bg-muted/15 flex gap-1.5 overflow-x-auto scrollbar-hidden shrink-0">
 					{QUICK_ACTIONS.map((action) => (
 						<button
 							key={action.label}
@@ -330,6 +370,8 @@ export function AiAssistantView() {
 						<span className="font-mono">{model.replace("llama-", "").replace("-versatile", "")}</span>
 					</div>
 				</div>
+					</>
+				)}
 			</div>
 		</PanelView>
 	);

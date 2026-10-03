@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import type { TProjectMetadata } from "@/project/types";
 import { formatDate } from "@/utils/date";
-import { formatTimecode, mediaTimeToSeconds } from "opencut-wasm";
+import { formatMediaDuration } from "@/utils/duration";
 import { Button } from "@/components/ui/button";
 
 function InfoRow({
@@ -35,11 +35,7 @@ export function ProjectInfoDialog({
 	onOpenChange: (open: boolean) => void;
 	project: TProjectMetadata;
 }) {
-	const durationSeconds = mediaTimeToSeconds({ time: project.duration });
-	const durationFormatted =
-		project.duration > 0
-		? (formatTimecode({ time: project.duration, format: durationSeconds >= 3600 ? "HH:MM:SS" : "MM:SS" }) ?? "")
-		: "0:00";
+	const durationFormatted = formatMediaDuration({ duration: project.duration }) ?? "0:00";
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onOpenChange}>

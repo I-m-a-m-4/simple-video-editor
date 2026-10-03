@@ -341,3 +341,16 @@
   font-family: "Clash Display", sans-serif;
   letter-spacing: -0.02em;
 }
+
+/* Sidebar interactive elements cursor pointer */
+aside button,
+aside a,
+aside [role="button"],
+aside .sidebar-item,
+.panel button,
+.panel [role="button"],
+.panel [draggable="true"],
+.panel-item {
+  cursor: pointer;
+}
+

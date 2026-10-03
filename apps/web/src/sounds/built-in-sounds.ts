@@ -247,6 +247,115 @@ function generateBassDropWav(): string {
 	return createWavDataUri(samples, sampleRate);
 }
 
+// 11. Cinematic Atmospheric Ambient Pad (Long & Lush, D minor 9th)
+function generateAmbientPadWav(): string {
+	const sampleRate = 44100;
+	const duration = 5.0; // 5-second atmospheric drone pad
+	const numSamples = Math.floor(sampleRate * duration);
+	const samples = new Float32Array(numSamples);
+
+	// Dm9 chord frequencies: D3 (146.83), F3 (174.61), A3 (220.0), C4 (261.63), E4 (329.63)
+	const freqs = [146.83, 174.61, 220.0, 261.63, 329.63];
+
+	for (let i = 0; i < numSamples; i++) {
+		const t = i / sampleRate;
+		const progress = i / numSamples;
+
+		// Smooth attack & release envelope
+		const attack = Math.min(1, t / 0.8);
+		const release = Math.min(1, (duration - t) / 1.0);
+		const env = attack * release;
+
+		// LFO filter modulation
+		const lfo = 0.5 + 0.5 * Math.sin(2 * Math.PI * 0.4 * t);
+
+		let sample = 0;
+		for (let f = 0; f < freqs.length; f++) {
+			const baseF = freqs[f];
+			// Subtle chorus detuning
+			const s1 = Math.sin(2 * Math.PI * baseF * t);
+			const s2 = Math.sin(2 * Math.PI * (baseF * 1.003) * t);
+			const s3 = Math.sin(2 * Math.PI * (baseF * 0.997) * t);
+			sample += (s1 * 0.5 + s2 * 0.25 + s3 * 0.25) / freqs.length;
+		}
+
+		// Soft saturation warmth
+		const warm = Math.tanh(sample * (1.2 + 0.4 * lfo));
+		samples[i] = warm * env * 0.75;
+	}
+	return createWavDataUri(samples, sampleRate);
+}
+
+// 12. Cinematic Braam / Horn of Doom (Heavy Orchestral Hit)
+function generateBraamImpactWav(): string {
+	const sampleRate = 44100;
+	const duration = 3.2;
+	const numSamples = Math.floor(sampleRate * duration);
+	const samples = new Float32Array(numSamples);
+
+	const baseFreq = 55.0; // A1 low brass
+
+	for (let i = 0; i < numSamples; i++) {
+		const t = i / sampleRate;
+		const progress = i / numSamples;
+
+		const attack = Math.min(1, t / 0.04);
+		const decay = Math.exp(-progress * 1.8);
+		const env = attack * decay;
+
+		// Rich multi-saw harmonic distortion
+		let saw = 0;
+		for (let h = 1; h <= 8; h++) {
+			saw += (Math.sin(2 * Math.PI * baseFreq * h * t) / h) * (1 - progress * 0.3);
+		}
+
+		// Low sub punch
+		const sub = Math.sin(2 * Math.PI * (baseFreq * 0.5) * t) * Math.exp(-progress * 3);
+
+		// Distorted brass resonance
+		const brass = Math.tanh((saw * 1.4 + sub * 0.6) * 1.5);
+		samples[i] = brass * env * 0.85;
+	}
+	return createWavDataUri(samples, sampleRate);
+}
+
+// 13. Lo-Fi Electric Piano Chords (Chill Melodic Progression)
+function generateLofiKeysWav(): string {
+	const sampleRate = 44100;
+	const duration = 4.2;
+	const numSamples = Math.floor(sampleRate * duration);
+	const samples = new Float32Array(numSamples);
+
+	// Two smooth jazz chords (Fmaj7 -> Em7)
+	const chord1 = [174.61, 220.0, 261.63, 329.63]; // Fmaj7
+	const chord2 = [164.81, 196.0, 246.94, 293.66]; // Em7
+
+	for (let i = 0; i < numSamples; i++) {
+		const t = i / sampleRate;
+		const isChord2 = t >= 2.1;
+		const chordTime = isChord2 ? t - 2.1 : t;
+		const chord = isChord2 ? chord2 : chord1;
+
+		const attack = Math.min(1, chordTime / 0.02);
+		const decay = Math.exp(-chordTime * 0.9);
+		const env = attack * decay;
+
+		let chime = 0;
+		for (let c = 0; c < chord.length; c++) {
+			const f = chord[c];
+			const bell = Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(2 * Math.PI * f * 2 * t);
+			chime += bell / chord.length;
+		}
+
+		// Gentle tape wow/flutter & vinyl warmth
+		const wow = Math.sin(2 * Math.PI * 1.5 * t) * 0.05;
+		const vinylNoise = (Math.random() * 2 - 1) * 0.008;
+
+		samples[i] = (chime * (1 + wow) + vinylNoise) * env * 0.7;
+	}
+	return createWavDataUri(samples, sampleRate);
+}
+
 export interface BuiltInSound {
 	id: number;
 	name: string;
@@ -285,6 +394,9 @@ export function getBuiltInSounds(): BuiltInSound[] {
 	const riserUri = generateRiserWav();
 	const glitchUri = generateGlitchWav();
 	const bassDropUri = generateBassDropWav();
+	const ambientPadUri = generateAmbientPadWav();
+	const braamUri = generateBraamImpactWav();
+	const lofiKeysUri = generateLofiKeysWav();
 
 	cachedSounds = [
 		{
@@ -506,6 +618,72 @@ export function getBuiltInSounds(): BuiltInSound[] {
 			downloads: 15600,
 			rating: 4.96,
 			ratingCount: 470,
+		},
+		{
+			id: 900111,
+			name: "Cinematic Ambient Pad (Atmospheric Drone)",
+			description: "Lush Dm9 synth pad chord with analog chorus warmth for background scenes and narrative pacing",
+			url: ambientPadUri,
+			previewUrl: ambientPadUri,
+			downloadUrl: ambientPadUri,
+			duration: 5.0,
+			filesize: 441000,
+			type: "wav",
+			channels: 1,
+			bitrate: 705600,
+			bitdepth: 16,
+			samplerate: 44100,
+			username: "AmberCut Studio",
+			tags: ["ambient", "cinematic", "pad", "synth", "drone", "music"],
+			license: "Creative Commons 0",
+			created: "2026-01-01",
+			downloads: 21400,
+			rating: 4.98,
+			ratingCount: 620,
+		},
+		{
+			id: 900112,
+			name: "Orchestral Braam Impact",
+			description: "Massive brass horn braam with low reese distortion for blockbuster reveals and trailers",
+			url: braamUri,
+			previewUrl: braamUri,
+			downloadUrl: braamUri,
+			duration: 3.2,
+			filesize: 282240,
+			type: "wav",
+			channels: 1,
+			bitrate: 705600,
+			bitdepth: 16,
+			samplerate: 44100,
+			username: "AmberCut Studio",
+			tags: ["braam", "brass", "orchestral", "trailer", "cinematic", "impact"],
+			license: "Creative Commons 0",
+			created: "2026-01-01",
+			downloads: 18900,
+			rating: 4.97,
+			ratingCount: 510,
+		},
+		{
+			id: 900113,
+			name: "Lo-Fi Electric Piano Chords",
+			description: "Warm Rhodes 7th chord progression with subtle vinyl flutter for chill vlog and tutorial backgrounds",
+			url: lofiKeysUri,
+			previewUrl: lofiKeysUri,
+			downloadUrl: lofiKeysUri,
+			duration: 4.2,
+			filesize: 370440,
+			type: "wav",
+			channels: 1,
+			bitrate: 705600,
+			bitdepth: 16,
+			samplerate: 44100,
+			username: "AmberCut Studio",
+			tags: ["lofi", "chords", "piano", "rhodes", "chill", "music", "vlog"],
+			license: "Creative Commons 0",
+			created: "2026-01-01",
+			downloads: 26800,
+			rating: 5.0,
+			ratingCount: 780,
 		},
 	];
 

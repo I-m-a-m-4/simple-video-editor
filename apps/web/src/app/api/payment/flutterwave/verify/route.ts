@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
+
+export async function GET() {
+	return NextResponse.json({ ok: true });
+}
 
 export async function POST(req: NextRequest) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json(
+			{ error: "Not available in desktop" },
+			{ status: 400 },
+		);
+	}
+
 	try {
 		const body = await req.json();
 		const { transaction_id } = body;

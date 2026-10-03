@@ -3,7 +3,7 @@ import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
 const isExport =
-  process.env.TAURI_EXPORT === "true" ||
+  process.env.TAURI_EXPORT?.trim() === "true" ||
   process.env.TAURI_ENV_PLATFORM !== undefined;
 
 const nextConfig: NextConfig = {

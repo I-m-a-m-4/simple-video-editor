@@ -168,7 +168,7 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 					let errorString: string | undefined;
 
 					try {
-						result = executeAiTool(toolName, args);
+						result = await executeAiTool(toolName, args);
 					} catch (err) {
 						errorString = err instanceof Error ? err.message : String(err);
 						result = { error: errorString };

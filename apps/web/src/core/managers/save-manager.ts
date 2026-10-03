@@ -58,11 +58,13 @@ export class SaveManager {
 
 	markDirty({ force = false }: { force?: boolean } = {}): void {
 		if (this.isPaused && !force) return;
+		if (!this.editor.project.getActiveOrNull()) return;
 		this.hasPendingSave = true;
 		this.queueSave();
 	}
 
 	async flush(): Promise<void> {
+		if (!this.editor.project.getActiveOrNull()) return;
 		this.hasPendingSave = true;
 		await this.saveNow();
 	}
@@ -85,8 +87,12 @@ export class SaveManager {
 		if (this.isSaving) return;
 		if (!this.hasPendingSave) return;
 
-		const activeProject = this.editor.project.getActive();
-		if (!activeProject) return;
+		const activeProject = this.editor.project.getActiveOrNull();
+		if (!activeProject) {
+			this.hasPendingSave = false;
+			this.clearTimer();
+			return;
+		}
 		if (this.editor.project.getIsLoading()) return;
 		if (this.editor.project.getMigrationState().isMigrating) return;
 
@@ -96,6 +102,8 @@ export class SaveManager {
 
 		try {
 			await this.editor.project.saveCurrentProject();
+		} catch (error) {
+			console.error("SaveManager: Failed to save current project:", error);
 		} finally {
 			this.isSaving = false;
 			if (this.hasPendingSave) {

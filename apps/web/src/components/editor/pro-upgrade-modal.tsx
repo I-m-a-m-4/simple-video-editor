@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { recordTelemetryEvent } from "@/stores/telemetry-store";
+import { saveRealTransaction } from "@/services/transactions";
 
 declare global {
 	interface Window {
@@ -184,6 +185,18 @@ export function ProUpgradeModal() {
 							transactionId: String(response.transaction_id),
 							customerEmail: email,
 						});
+						saveRealTransaction({
+							id: `tx_${response.transaction_id || Date.now()}`,
+							tx_ref: txRef,
+							email: email,
+							customer: name || email.split("@")[0],
+							plan: billingCycle === "annual" ? "Annual Pro" : "Monthly Pro",
+							amountNgn: currentPlan.amountNgn,
+							amountUsd: billingCycle === "annual" ? 79.99 : 9.99,
+							status: "successful",
+							date: new Date().toLocaleString(),
+							method: "Card",
+						});
 						toast.success("Welcome to PRO! Features unlocked.");
 					} else {
 						toast.error(result.message || "Payment could not be verified.");
@@ -197,6 +210,18 @@ export function ProUpgradeModal() {
 							plan: billingCycle,
 							transactionId: String(response.transaction_id),
 							customerEmail: email,
+						});
+						saveRealTransaction({
+							id: `tx_${response.transaction_id || Date.now()}`,
+							tx_ref: txRef,
+							email: email,
+							customer: name || email.split("@")[0],
+							plan: billingCycle === "annual" ? "Annual Pro" : "Monthly Pro",
+							amountNgn: currentPlan.amountNgn,
+							amountUsd: billingCycle === "annual" ? 79.99 : 9.99,
+							status: "successful",
+							date: new Date().toLocaleString(),
+							method: "Card",
 						});
 						toast.success("Welcome to PRO!");
 					}

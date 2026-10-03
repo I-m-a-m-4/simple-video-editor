@@ -23,6 +23,10 @@ export class SelectionManager {
 		return this.selectedElements;
 	}
 
+	getSelectedIds(): string[] {
+		return this.selectedElements.map((el) => el.elementId);
+	}
+
 	getSelectedKeyframes(): SelectedKeyframeRef[] {
 		return this.selectedKeyframes;
 	}

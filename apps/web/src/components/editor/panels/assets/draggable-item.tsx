@@ -101,14 +101,14 @@ export function DraggableItem({
 				>
 					<div
 						className={cn(
-							"relative flex h-auto w-full cursor-default flex-col gap-1 p-",
+							"relative flex h-auto w-full cursor-pointer flex-col gap-1",
 							className,
 						)}
 					>
 						<AspectRatio
 							ratio={aspectRatio}
 							className={cn(
-								"bg-accent relative overflow-hidden",
+								"bg-accent relative overflow-hidden cursor-pointer",
 								isRounded && "rounded-sm",
 								isDraggable && "[&::-webkit-drag-ghost]:opacity-0",
 							)}
@@ -126,7 +126,7 @@ export function DraggableItem({
 						</AspectRatio>
 						{shouldShowLabel && (
 							<span
-								className="text-muted-foreground w-full truncate text-left text-[0.7rem]"
+								className="text-muted-foreground w-full truncate text-left text-[0.7rem] cursor-pointer"
 								title={name}
 							>
 								<span className="sr-only">{name}</span>
@@ -147,7 +147,7 @@ export function DraggableItem({
 					<button
 						type="button"
 						className={cn(
-							"flex h-8 w-full cursor-default items-center gap-3 px-1 outline-none",
+							"flex h-8 w-full cursor-pointer items-center gap-3 px-1 outline-none",
 							isDraggable && "[&::-webkit-drag-ghost]:opacity-0",
 							className,
 						)}

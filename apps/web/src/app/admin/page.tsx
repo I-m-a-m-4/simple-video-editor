@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSession, signIn, signUp } from "@/auth/client";
 import { useAuth } from "@/auth/auth-context";
 import { Button } from "@/components/ui/button";
@@ -28,59 +28,111 @@ import {
 	BarChart3,
 	AlertTriangle,
 	UserCheck,
+	Download,
+	UserPlus,
+	UserX,
+	Database,
+	HardDrive,
+	Zap,
+	Trash2,
+	Check,
+	X,
+	FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { getTelemetryData, type TelemetrySummary } from "@/stores/telemetry-store";
+import {
+	getTelemetryData,
+	clearTelemetryData,
+	type TelemetrySummary,
+} from "@/stores/telemetry-store";
+import {
+	getRealTransactions,
+	saveRealTransaction,
+	verifyAndRecordTransaction,
+	type Transaction,
+} from "@/services/transactions";
+import { storageService } from "@/services/storage/service";
+import {
+	readStorageQuotaStatus,
+	formatStorageBytes,
+	type StorageQuotaStatus,
+} from "@/services/storage/quota";
+import { useProStore, isUserAdmin } from "@/stores/pro-store";
+import { db } from "@/services/firebase";
+import {
+	collection,
+	doc,
+	getDocs,
+	setDoc,
+	query,
+	orderBy,
+	serverTimestamp,
+} from "firebase/firestore";
 
-interface Transaction {
-	id: string;
-	tx_ref: string;
-	email: string;
-	customer: string;
-	plan: "Annual Pro" | "Monthly Pro";
-	amountNgn: number;
-	amountUsd: number;
-	status: "successful" | "pending";
-	date: string;
-	method: "Card" | "Bank Transfer" | "USSD";
-}
-
-interface AdminUser {
+export interface AdminUser {
 	id: string;
 	name: string;
 	email: string;
 	role: "Super Admin" | "Admin" | "User";
-	plan: "Pro (Annual)" | "Pro (Monthly)" | "Free";
+	plan: "Pro (Annual)" | "Pro (Monthly)" | "Pro (Lifetime)" | "Free";
+	isPro: boolean;
 	projectsCount: number;
 	joined: string;
+	source: "Firebase Auth" | "Local Storage" | "Firestore";
 }
+
+const MANAGED_USERS_KEY = "opencut_admin_managed_users_v1";
 
 export default function AdminPage() {
 	const { user: authUser, signOut: authSignOut } = useAuth();
-	const { data: session, isPending } = useSession();
+	const { data: session } = useSession();
+	const { isPro: isCurrentPro, grantAdminAccess, resetProStatus } = useProStore();
 
-	// Default to signup: Users must firstly signup before they can see the admin page
+	// Auth form state
 	const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
 	const [name, setName] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [authLoading, setAuthLoading] = useState(false);
 	const [authError, setAuthError] = useState<string | null>(null);
-	const [telemetry, setTelemetry] = useState<TelemetrySummary | null>(null);
 
-	// Client-side local admin bypass state for instant verification
+	// Client local admin session
 	const [localAdminUser, setLocalAdminUser] = useState<{
 		name: string;
 		email: string;
 	} | null>(null);
 
-	// Tabs & search
-	const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "users" | "telemetry" | "system">("overview");
+	// Active tab
+	const [activeTab, setActiveTab] = useState<
+		"overview" | "transactions" | "users" | "telemetry" | "system"
+	>("overview");
 	const [searchQuery, setSearchQuery] = useState("");
 
+	// Real data states (no dummy values)
+	const [transactions, setTransactions] = useState<Transaction[]>([]);
+	const [usersList, setUsersList] = useState<AdminUser[]>([]);
+	const [telemetry, setTelemetry] = useState<TelemetrySummary | null>(null);
+	const [storageQuota, setStorageQuota] = useState<StorageQuotaStatus | null>(null);
+	const [realProjectsCount, setRealProjectsCount] = useState<number>(0);
+	const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+
+	// Advanced Tools: Verification modal/input
+	const [verifyTxId, setVerifyTxId] = useState("");
+	const [verifyPlan, setVerifyPlan] = useState<"Annual Pro" | "Monthly Pro">("Annual Pro");
+	const [isVerifying, setIsVerifying] = useState(false);
+
+	// Advanced Tools: Grant Pro modal/input
+	const [grantEmail, setGrantEmail] = useState("");
+	const [grantName, setGrantName] = useState("");
+
+	// Diagnostic status
+	const [groqPingMs, setGroqPingMs] = useState<number | null>(null);
+	const [isTestingGroq, setIsTestingGroq] = useState(false);
+	const [firestoreConnected, setFirestoreConnected] = useState<boolean | null>(null);
+
+	// Check local admin session on mount
 	useEffect(() => {
-		setTelemetry(getTelemetryData());
 		const stored = localStorage.getItem("opencut_admin_session");
 		if (stored) {
 			try {
@@ -88,16 +140,160 @@ export default function AdminPage() {
 				if (parsed.email && parsed.email.toLowerCase().endsWith("@gmail.com")) {
 					setLocalAdminUser(parsed);
 				}
-			} catch (e) {
-				// ignore
-			}
+			} catch {}
 		}
 	}, []);
 
 	const currentEmail = authUser?.email || session?.user?.email || localAdminUser?.email;
-	const currentName = authUser?.name || session?.user?.name || localAdminUser?.name || "Administrator";
+	const currentName =
+		authUser?.name ||
+		session?.user?.name ||
+		localAdminUser?.name ||
+		(currentEmail ? currentEmail.split("@")[0] : "Administrator");
 	const isGmail = currentEmail ? currentEmail.toLowerCase().endsWith("@gmail.com") : false;
 
+	// Load all REAL live data
+	const loadAllDashboardData = useCallback(async () => {
+		setIsLoadingData(true);
+
+		try {
+			// 1. Load real transactions
+			const txList = await getRealTransactions();
+			setTransactions(txList);
+
+			// 2. Load real telemetry
+			setTelemetry(getTelemetryData());
+
+			// 3. Load real storage quota
+			const quota = await readStorageQuotaStatus();
+			setStorageQuota(quota);
+
+			// 4. Load real projects from IndexedDB
+			let projectsCount = 0;
+			try {
+				const projects = await storageService.loadAllProjects();
+				projectsCount = projects.length;
+				setRealProjectsCount(projectsCount);
+			} catch {
+				// Project storage might be uninitialized
+			}
+
+			// 5. Load real registered accounts
+			const loadedUsers: AdminUser[] = [];
+			const seenEmails = new Set<string>();
+
+			// Add currently authenticated admin
+			if (currentEmail) {
+				const adminUserRecord: AdminUser = {
+					id: authUser?.id || "usr_current_admin",
+					name: currentName,
+					email: currentEmail,
+					role: "Super Admin",
+					plan: isCurrentPro ? "Pro (Lifetime)" : "Free",
+					isPro: isCurrentPro,
+					projectsCount: projectsCount,
+					joined: "Current Session",
+					source: authUser?.id ? "Firebase Auth" : "Local Storage",
+				};
+				loadedUsers.push(adminUserRecord);
+				seenEmails.add(currentEmail.toLowerCase());
+			}
+
+			// Add admin-managed accounts from local storage
+			try {
+				const rawManaged = localStorage.getItem(MANAGED_USERS_KEY);
+				if (rawManaged) {
+					const parsed = JSON.parse(rawManaged) as AdminUser[];
+					for (const u of parsed) {
+						if (!seenEmails.has(u.email.toLowerCase())) {
+							loadedUsers.push(u);
+							seenEmails.add(u.email.toLowerCase());
+						}
+					}
+				}
+			} catch {}
+
+			// Fetch Firestore users if available
+			try {
+				const usersCol = collection(db, "users");
+				const snapshot = await getDocs(usersCol);
+				setFirestoreConnected(true);
+
+				for (const docSnap of snapshot.docs) {
+					const data = docSnap.data();
+					const userEmail = (data.email || "").toLowerCase();
+					if (userEmail && !seenEmails.has(userEmail)) {
+						loadedUsers.push({
+							id: docSnap.id,
+							name: data.name || userEmail.split("@")[0],
+							email: userEmail,
+							role: userEmail.endsWith("@gmail.com") ? "Admin" : "User",
+							plan: data.plan || (data.isPro ? "Pro (Lifetime)" : "Free"),
+							isPro: !!data.isPro,
+							projectsCount: data.projectsCount || 0,
+							joined: data.joined || "Recent",
+							source: "Firestore",
+						});
+						seenEmails.add(userEmail);
+					}
+				}
+			} catch {
+				setFirestoreConnected(false);
+			}
+
+			setUsersList(loadedUsers);
+		} catch (err) {
+			console.error("Error loading dashboard data:", err);
+		} finally {
+			setIsLoadingData(false);
+		}
+	}, [currentEmail, currentName, authUser, isCurrentPro]);
+
+	useEffect(() => {
+		if (isGmail) {
+			loadAllDashboardData();
+		}
+	}, [isGmail, loadAllDashboardData]);
+
+	// Live Groq API Latency Test
+	const testGroqConnection = async () => {
+		setIsTestingGroq(true);
+		setGroqPingMs(null);
+		const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+
+		if (!apiKey) {
+			toast.error("NEXT_PUBLIC_GROQ_API_KEY is not configured.");
+			setIsTestingGroq(false);
+			return;
+		}
+
+		const startTime = performance.now();
+		try {
+			const res = await fetch("https://api.groq.com/openai/v1/models", {
+				method: "GET",
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+			});
+
+			const endTime = performance.now();
+			const latency = Math.round(endTime - startTime);
+
+			if (res.ok) {
+				setGroqPingMs(latency);
+				toast.success(`Groq LPU Active: ${latency}ms latency`);
+			} else {
+				toast.error(`Groq API returned status ${res.status}`);
+			}
+		} catch (err: any) {
+			toast.error(`Groq ping failed: ${err?.message || "Network error"}`);
+		} finally {
+			setIsTestingGroq(false);
+		}
+	};
+
+	// Auth submission
 	const handleAuthSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setAuthError(null);
@@ -108,9 +304,8 @@ export default function AdminPage() {
 			return;
 		}
 
-		// Requirement: Only @gmail.com can log into the admin portal
 		if (!trimmedEmail.endsWith("@gmail.com")) {
-			setAuthError("Access Restricted: Only @gmail.com administrator accounts are authorized to access this portal.");
+			setAuthError("Access Restricted: Only @gmail.com accounts are authorized for admin.");
 			toast.error("Access denied: Only @gmail.com accounts are permitted.");
 			return;
 		}
@@ -136,9 +331,7 @@ export default function AdminPage() {
 						password,
 						name: name.trim(),
 					});
-				} catch (err) {
-					console.warn("Server auth returned:", err);
-				}
+				} catch {}
 
 				const adminSession = { name: name.trim(), email: trimmedEmail };
 				localStorage.setItem("opencut_admin_session", JSON.stringify(adminSession));
@@ -150,9 +343,7 @@ export default function AdminPage() {
 						email: trimmedEmail,
 						password,
 					});
-				} catch (err) {
-					console.warn("Server signin returned:", err);
-				}
+				} catch {}
 
 				const adminSession = {
 					name: trimmedEmail.split("@")[0].toUpperCase(),
@@ -163,7 +354,7 @@ export default function AdminPage() {
 				toast.success(`Welcome back, ${trimmedEmail}`);
 			}
 		} catch (err: any) {
-			setAuthError(err?.message || "Authentication failed. Please check credentials.");
+			setAuthError(err?.message || "Authentication failed.");
 		} finally {
 			setAuthLoading(false);
 		}
@@ -176,7 +367,223 @@ export default function AdminPage() {
 		toast.info("Signed out of admin dashboard.");
 	};
 
-	// 1. If not logged in or pending
+	// Advanced Action: Verify & record Flutterwave transaction
+	const handleVerifyTransaction = async (e: React.FormEvent) => {
+		e.preventDefault();
+		if (!verifyTxId.trim()) {
+			toast.error("Please enter a valid Flutterwave Transaction ID.");
+			return;
+		}
+
+		setIsVerifying(true);
+		toast.loading("Verifying transaction with Flutterwave API...", { id: "admin-verify" });
+
+		const res = await verifyAndRecordTransaction(verifyTxId.trim(), verifyPlan);
+		toast.dismiss("admin-verify");
+		setIsVerifying(false);
+
+		if (res.success && res.transaction) {
+			toast.success(
+				`Verified! ₦${res.transaction.amountNgn.toLocaleString()} recorded for ${res.transaction.customer}`,
+			);
+			setVerifyTxId("");
+			loadAllDashboardData();
+		} else {
+			toast.error(res.error || "Transaction verification failed.");
+		}
+	};
+
+	// Advanced Action: Grant / Revoke Pro
+	const handleGrantPro = async (targetEmail: string, targetName?: string) => {
+		const cleanEmail = targetEmail.trim().toLowerCase();
+		if (!cleanEmail) {
+			toast.error("Please enter an email address.");
+			return;
+		}
+
+		// Update locally
+		const currentManaged: AdminUser[] = JSON.parse(
+			localStorage.getItem(MANAGED_USERS_KEY) || "[]",
+		);
+		const existingIndex = currentManaged.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+
+		const updatedRecord: AdminUser = {
+			id: `usr_${Date.now()}`,
+			name: targetName || cleanEmail.split("@")[0],
+			email: cleanEmail,
+			role: cleanEmail.endsWith("@gmail.com") ? "Admin" : "User",
+			plan: "Pro (Lifetime)",
+			isPro: true,
+			projectsCount: 0,
+			joined: new Date().toLocaleDateString(),
+			source: "Local Storage",
+		};
+
+		if (existingIndex >= 0) {
+			currentManaged[existingIndex] = {
+				...currentManaged[existingIndex],
+				plan: "Pro (Lifetime)",
+				isPro: true,
+			};
+		} else {
+			currentManaged.unshift(updatedRecord);
+		}
+
+		localStorage.setItem(MANAGED_USERS_KEY, JSON.stringify(currentManaged));
+
+		// If current user is the target, activate in pro-store
+		if (currentEmail && cleanEmail === currentEmail.toLowerCase()) {
+			grantAdminAccess(cleanEmail);
+		}
+
+		// Save a complimentary transaction entry for audit trail
+		await saveRealTransaction({
+			id: `tx_admin_${Date.now()}`,
+			tx_ref: `ADMIN_GRANT_${Date.now()}`,
+			email: cleanEmail,
+			customer: targetName || cleanEmail.split("@")[0],
+			plan: "Pro (Lifetime)",
+			amountNgn: 0,
+			amountUsd: 0,
+			status: "successful",
+			date: new Date().toLocaleString(),
+			method: "Admin Granted",
+		});
+
+		// Sync to Firestore
+		try {
+			await setDoc(doc(db, "users", cleanEmail), {
+				email: cleanEmail,
+				name: targetName || cleanEmail.split("@")[0],
+				isPro: true,
+				plan: "Pro (Lifetime)",
+				updatedAt: serverTimestamp(),
+			});
+		} catch {}
+
+		toast.success(`Lifetime Pro access granted to ${cleanEmail}`);
+		setGrantEmail("");
+		setGrantName("");
+		loadAllDashboardData();
+	};
+
+	const handleRevokePro = async (targetEmail: string) => {
+		const cleanEmail = targetEmail.trim().toLowerCase();
+
+		const currentManaged: AdminUser[] = JSON.parse(
+			localStorage.getItem(MANAGED_USERS_KEY) || "[]",
+		);
+		const existingIndex = currentManaged.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+
+		if (existingIndex >= 0) {
+			currentManaged[existingIndex] = {
+				...currentManaged[existingIndex],
+				plan: "Free",
+				isPro: false,
+			};
+			localStorage.setItem(MANAGED_USERS_KEY, JSON.stringify(currentManaged));
+		}
+
+		if (currentEmail && cleanEmail === currentEmail.toLowerCase()) {
+			resetProStatus();
+		}
+
+		try {
+			await setDoc(doc(db, "users", cleanEmail), {
+				email: cleanEmail,
+				isPro: false,
+				plan: "Free",
+				updatedAt: serverTimestamp(),
+			});
+		} catch {}
+
+		toast.info(`Pro status revoked for ${cleanEmail}`);
+		loadAllDashboardData();
+	};
+
+	// Export transactions to CSV
+	const exportTransactionsCSV = () => {
+		if (transactions.length === 0) {
+			toast.info("No transactions to export.");
+			return;
+		}
+
+		const headers = [
+			"ID",
+			"Transaction Ref",
+			"Customer",
+			"Email",
+			"Plan",
+			"Amount NGN",
+			"Amount USD",
+			"Status",
+			"Date",
+			"Method",
+		];
+		const rows = transactions.map((t) => [
+			t.id,
+			t.tx_ref,
+			`"${t.customer.replace(/"/g, '""')}"`,
+			t.email,
+			t.plan,
+			t.amountNgn,
+			t.amountUsd,
+			t.status,
+			`"${t.date}"`,
+			t.method,
+		]);
+
+		const csvContent =
+			"data:text/csv;charset=utf-8," +
+			[headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+		const encodedUri = encodeURI(csvContent);
+		const link = document.createElement("a");
+		link.setAttribute("href", encodedUri);
+		link.setAttribute("download", `ambercut_transactions_${Date.now()}.csv`);
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		toast.success("Transactions exported to CSV");
+	};
+
+	// Filtered lists
+	const filteredTransactions = useMemo(() => {
+		return transactions.filter(
+			(tx) =>
+				tx.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				tx.customer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				tx.tx_ref.toLowerCase().includes(searchQuery.toLowerCase()),
+		);
+	}, [transactions, searchQuery]);
+
+	const filteredUsers = useMemo(() => {
+		return usersList.filter(
+			(u) =>
+				u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				u.email.toLowerCase().includes(searchQuery.toLowerCase()),
+		);
+	}, [usersList, searchQuery]);
+
+	// Real Metrics Calculations
+	const totalRevenueNgn = useMemo(() => {
+		return transactions
+			.filter((t) => t.status === "successful")
+			.reduce((acc, t) => acc + (t.amountNgn || 0), 0);
+	}, [transactions]);
+
+	const totalRevenueUsd = useMemo(() => {
+		return transactions
+			.filter((t) => t.status === "successful")
+			.reduce((acc, t) => acc + (t.amountUsd || 0), 0);
+	}, [transactions]);
+
+	const proSubscribersCount = useMemo(() => {
+		const proUsers = usersList.filter((u) => u.isPro);
+		const paidTx = transactions.filter((t) => t.status === "successful");
+		return Math.max(proUsers.length, paidTx.length);
+	}, [usersList, transactions]);
+
+	// 1. If not logged in
 	if (!currentEmail) {
 		return (
 			<div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
@@ -189,7 +596,7 @@ export default function AdminPage() {
 							Admin Portal Access
 						</h1>
 						<p className="text-xs text-muted-foreground leading-relaxed">
-							Restricted administrator dashboard. You must sign up / sign in with a verified{" "}
+							Restricted administrator dashboard. Sign up or sign in with a verified{" "}
 							<span className="font-semibold text-orange-500 underline">@gmail.com</span> address.
 						</p>
 					</div>
@@ -312,11 +719,11 @@ export default function AdminPage() {
 							Access Restricted
 						</h1>
 						<p className="text-xs text-muted-foreground">
-							Your signed-in account (<strong className="text-foreground">{currentEmail}</strong>) is not authorized.
+							Your account (<strong className="text-foreground">{currentEmail}</strong>) is not authorized.
 						</p>
 					</div>
 					<div className="p-3 bg-muted/40 rounded-lg text-xs text-muted-foreground border border-border">
-						Only email addresses ending in <span className="text-orange-500 font-semibold">@gmail.com</span> have administrative privileges.
+						Only accounts ending in <span className="text-orange-500 font-semibold">@gmail.com</span> have administrative privileges.
 					</div>
 					<div className="flex gap-2 justify-center">
 						<Button
@@ -325,7 +732,7 @@ export default function AdminPage() {
 							onClick={handleSignOut}
 							className="text-xs gap-1.5"
 						>
-							<LogOut className="size-3.5" /> Sign Out & Switch Account
+							<LogOut className="size-3.5" /> Sign Out &amp; Switch Account
 						</Button>
 						<Link href="/">
 							<Button size="sm" className="text-xs bg-orange-500 hover:bg-orange-600 text-white">
@@ -338,142 +745,24 @@ export default function AdminPage() {
 		);
 	}
 
-	// 3. Authenticated @gmail.com Admin Dashboard
-	const transactionsData: Transaction[] = [
-		{
-			id: "tx_fw_981240",
-			tx_ref: "opencut_pro_1740831201",
-			email: "belloimam431@gmail.com",
-			customer: "Bello Imam",
-			plan: "Annual Pro",
-			amountNgn: 99000,
-			amountUsd: 79.99,
-			status: "successful",
-			date: "Today, 12:45 PM",
-			method: "Card",
-		},
-		{
-			id: "tx_fw_981239",
-			tx_ref: "opencut_pro_1740828410",
-			email: "creator.amaka@gmail.com",
-			customer: "Amaka Eze",
-			plan: "Annual Pro",
-			amountNgn: 99000,
-			amountUsd: 79.99,
-			status: "successful",
-			date: "Today, 11:20 AM",
-			method: "Bank Transfer",
-		},
-		{
-			id: "tx_fw_981238",
-			tx_ref: "opencut_pro_1740821590",
-			email: "david.film@gmail.com",
-			customer: "David Johnson",
-			plan: "Monthly Pro",
-			amountNgn: 12500,
-			amountUsd: 9.99,
-			status: "successful",
-			date: "Today, 09:15 AM",
-			method: "Card",
-		},
-		{
-			id: "tx_fw_981237",
-			tx_ref: "opencut_pro_1740810400",
-			email: "sarah.content@gmail.com",
-			customer: "Sarah Williams",
-			plan: "Monthly Pro",
-			amountNgn: 12500,
-			amountUsd: 9.99,
-			status: "successful",
-			date: "Yesterday, 04:30 PM",
-			method: "USSD",
-		},
-		{
-			id: "tx_fw_981236",
-			tx_ref: "opencut_pro_1740798100",
-			email: "studio.tobi@gmail.com",
-			customer: "Tobi Adeyemi",
-			plan: "Annual Pro",
-			amountNgn: 99000,
-			amountUsd: 79.99,
-			status: "successful",
-			date: "Yesterday, 02:10 PM",
-			method: "Card",
-		},
-	];
-
-	const usersData: AdminUser[] = [
-		{
-			id: "usr_01",
-			name: currentName,
-			email: currentEmail,
-			role: "Super Admin",
-			plan: "Pro (Annual)",
-			projectsCount: 14,
-			joined: "Mar 2026",
-		},
-		{
-			id: "usr_02",
-			name: "Amaka Eze",
-			email: "creator.amaka@gmail.com",
-			role: "Admin",
-			plan: "Pro (Annual)",
-			projectsCount: 8,
-			joined: "Mar 2026",
-		},
-		{
-			id: "usr_03",
-			name: "David Johnson",
-			email: "david.film@gmail.com",
-			role: "User",
-			plan: "Pro (Monthly)",
-			projectsCount: 5,
-			joined: "Mar 2026",
-		},
-		{
-			id: "usr_04",
-			name: "Sarah Williams",
-			email: "sarah.content@gmail.com",
-			role: "User",
-			plan: "Pro (Monthly)",
-			projectsCount: 3,
-			joined: "Feb 2026",
-		},
-		{
-			id: "usr_05",
-			name: "Tobi Adeyemi",
-			email: "studio.tobi@gmail.com",
-			role: "User",
-			plan: "Pro (Annual)",
-			projectsCount: 11,
-			joined: "Feb 2026",
-		},
-	];
-
-	const filteredTransactions = transactionsData.filter(
-		(tx) =>
-			tx.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			tx.customer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			tx.tx_ref.toLowerCase().includes(searchQuery.toLowerCase()),
-	);
-
-	const totalRevenueNgn = transactionsData.reduce((acc, t) => acc + t.amountNgn, 0);
-	const totalRevenueUsd = transactionsData.reduce((acc, t) => acc + t.amountUsd, 0);
-
+	// 3. Authenticated Admin Dashboard (100% Real Live Data)
 	return (
 		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			{/* Admin Header */}
 			<header className="border-b border-border bg-card/60 px-6 py-3 sticky top-0 z-20 backdrop-blur-md">
 				<div className="flex items-center justify-between">
 					<div className="flex items-center gap-3">
-						<Link href="/" className="font-clash text-lg font-bold text-foreground flex items-center gap-2">
+						<Link
+							href="/"
+							className="font-clash text-lg font-bold text-foreground flex items-center gap-2"
+						>
 							<span className="size-6 rounded-md bg-orange-500 text-white flex items-center justify-center text-xs font-black">
 								O
 							</span>
 							Simple Video Editor
 						</Link>
 						<Badge className="bg-orange-500/10 text-orange-500 border-orange-500/30 text-[10px] font-semibold">
-							Admin Portal
+							Live Admin Control
 						</Badge>
 					</div>
 
@@ -483,8 +772,22 @@ export default function AdminPage() {
 								<UserCheck className="size-3.5 text-emerald-500" />
 								<span>{currentEmail}</span>
 							</div>
-							<div className="text-[10px] text-muted-foreground">Authorized Administrator</div>
+							<div className="text-[10px] text-muted-foreground">
+								Verified Administrator • Real Database Mode
+							</div>
 						</div>
+
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={loadAllDashboardData}
+							disabled={isLoadingData}
+							className="h-8 text-xs gap-1.5"
+							title="Refresh Real Data"
+						>
+							<RefreshCw className={`size-3.5 ${isLoadingData ? "animate-spin" : ""}`} />
+							<span className="hidden sm:inline">Refresh Data</span>
+						</Button>
 
 						<Link href="/editor">
 							<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
@@ -504,73 +807,92 @@ export default function AdminPage() {
 					</div>
 				</div>
 
-				{/* Navigation Sub-Tabs */}
-				<div className="flex gap-2 mt-3 pt-2 border-t border-border/50 text-xs">
+				{/* Navigation Tabs */}
+				<div className="flex gap-2 mt-3 pt-2 border-t border-border/50 text-xs overflow-x-auto">
 					<button
 						type="button"
 						onClick={() => setActiveTab("overview")}
-						className={`px-3 py-1 rounded-md font-semibold transition-all ${
+						className={`px-3 py-1 rounded-md font-semibold transition-all whitespace-nowrap ${
 							activeTab === "overview"
 								? "bg-orange-500 text-white shadow-xs"
 								: "text-muted-foreground hover:text-foreground"
 						}`}
 					>
-						Overview &amp; Analytics
+						Overview &amp; Real Metrics
 					</button>
 					<button
 						type="button"
 						onClick={() => setActiveTab("transactions")}
-						className={`px-3 py-1 rounded-md font-semibold transition-all ${
+						className={`px-3 py-1 rounded-md font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
 							activeTab === "transactions"
 								? "bg-orange-500 text-white shadow-xs"
 								: "text-muted-foreground hover:text-foreground"
 						}`}
 					>
-						Flutterwave Transactions ({transactionsData.length})
+						<span>Flutterwave Transactions</span>
+						<Badge
+							variant="secondary"
+							className="text-[10px] py-0 px-1 bg-background/30 text-inherit"
+						>
+							{transactions.length}
+						</Badge>
 					</button>
 					<button
 						type="button"
 						onClick={() => setActiveTab("users")}
-						className={`px-3 py-1 rounded-md font-semibold transition-all ${
+						className={`px-3 py-1 rounded-md font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
 							activeTab === "users"
 								? "bg-orange-500 text-white shadow-xs"
 								: "text-muted-foreground hover:text-foreground"
 						}`}
 					>
-						Registered Users ({usersData.length})
+						<span>Registered Users</span>
+						<Badge
+							variant="secondary"
+							className="text-[10px] py-0 px-1 bg-background/30 text-inherit"
+						>
+							{usersList.length}
+						</Badge>
 					</button>
 					<button
 						type="button"
 						onClick={() => setActiveTab("telemetry")}
-						className={`px-3 py-1 rounded-md font-semibold transition-all ${
+						className={`px-3 py-1 rounded-md font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
 							activeTab === "telemetry"
 								? "bg-orange-500 text-white shadow-xs"
 								: "text-muted-foreground hover:text-foreground"
 						}`}
 					>
-						Feature Activity Feed ({(telemetry?.events?.length ?? 6)})
+						<span>Telemetry &amp; Usage</span>
+						<Badge
+							variant="secondary"
+							className="text-[10px] py-0 px-1 bg-background/30 text-inherit"
+						>
+							{telemetry?.events?.length ?? 0}
+						</Badge>
 					</button>
 					<button
 						type="button"
 						onClick={() => setActiveTab("system")}
-						className={`px-3 py-1 rounded-md font-semibold transition-all ${
+						className={`px-3 py-1 rounded-md font-semibold transition-all whitespace-nowrap ${
 							activeTab === "system"
 								? "bg-orange-500 text-white shadow-xs"
 								: "text-muted-foreground hover:text-foreground"
 						}`}
 					>
-						System &amp; Engine Health
+						Engine Diagnostics &amp; Health
 					</button>
 				</div>
 			</header>
 
 			{/* Main Content Area */}
 			<main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+				{/* OVERVIEW TAB */}
 				{activeTab === "overview" && (
 					<>
 						{/* Key Metrics Grid */}
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-							{/* Revenue Card */}
+							{/* Real Total Revenue */}
 							<div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
 								<div className="flex items-center justify-between text-muted-foreground text-xs">
 									<span>Total Revenue (Flutterwave)</span>
@@ -582,281 +904,355 @@ export default function AdminPage() {
 								<div className="flex items-center gap-1.5 text-[11px] text-emerald-500 font-medium">
 									<ArrowUpRight className="size-3.5" />
 									<span>${totalRevenueUsd.toFixed(2)} USD</span>
-									<span className="text-muted-foreground">• 100% verified</span>
+									<span className="text-muted-foreground">
+										• {transactions.length} total tx
+									</span>
 								</div>
 							</div>
 
-							{/* Pro Subscribers */}
+							{/* Real Pro Subscribers */}
 							<div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
 								<div className="flex items-center justify-between text-muted-foreground text-xs">
 									<span>Pro Subscribers</span>
 									<CreditCard className="size-4 text-orange-500" />
 								</div>
 								<div className="text-2xl font-extrabold font-clash text-foreground">
-									248 Active
+									{proSubscribersCount} Active
 								</div>
 								<div className="text-[11px] text-muted-foreground">
-									68% Annual (₦99k) • 32% Monthly (₦12.5k)
+									Real active Pro tiers &amp; verified upgrades
 								</div>
 							</div>
 
-							{/* Total Users */}
+							{/* Real Registered Users */}
 							<div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
 								<div className="flex items-center justify-between text-muted-foreground text-xs">
-									<span>Registered Users</span>
+									<span>Registered Accounts</span>
 									<Users className="size-4 text-blue-500" />
 								</div>
 								<div className="text-2xl font-extrabold font-clash text-foreground">
-									1,420
+									{usersList.length}
 								</div>
 								<div className="text-[11px] text-emerald-500">
-									+18% new users this week
+									Active users &amp; authorized administrators
 								</div>
 							</div>
 
-							{/* Video Projects Rendered */}
+							{/* Real Projects & Exports */}
 							<div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
 								<div className="flex items-center justify-between text-muted-foreground text-xs">
-									<span>Timeline Exports</span>
+									<span>Local Projects Ingested</span>
 									<Film className="size-4 text-purple-500" />
 								</div>
 								<div className="text-2xl font-extrabold font-clash text-foreground">
-									12,410
+									{realProjectsCount}
 								</div>
 								<div className="text-[11px] text-muted-foreground">
-									4K &amp; 1080p GPU accelerated
+									IndexedDB &amp; OPFS project archives
 								</div>
 							</div>
 						</div>
 
-						{/* Feature Usage Tracking */}
-						<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-							{/* AI & Feature Activity */}
-							<div className="lg:col-span-2 rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+						{/* Quick Action Command Center */}
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+							{/* Transaction Verification Tool */}
+							<div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
 								<div className="flex items-center justify-between">
 									<h2 className="text-sm font-bold font-clash text-foreground flex items-center gap-2">
-										<Sparkles className="size-4 text-orange-500" />
-										CapCut AI &amp; Timeline Feature Analytics
+										<CheckCircle2 className="size-4 text-orange-500" />
+										Verify Flutterwave Transaction ID
 									</h2>
-									<Badge variant="outline" className="text-[10px]">Real-Time Telemetry</Badge>
+									<Badge variant="outline" className="text-[10px]">
+										Live Gateway
+									</Badge>
 								</div>
+								<p className="text-xs text-muted-foreground">
+									Paste any transaction ID from your Flutterwave dashboard to verify it directly with Flutterwave API and record it into real records.
+								</p>
 
-								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-									{/* Smart Suggestions */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<Sparkles className="size-3 text-amber-500" /> Smart suggestions
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-500 border-amber-500/30">AI</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.smartSuggestionsCount ?? 142).toLocaleString()} Runs
-										</div>
-										<div className="text-[10px] text-muted-foreground">Find out how your video can be improved</div>
-									</div>
+								<form onSubmit={handleVerifyTransaction} className="flex gap-2">
+									<Input
+										placeholder="e.g. 19284729"
+										value={verifyTxId}
+										onChange={(e) => setVerifyTxId(e.target.value)}
+										className="h-8 text-xs"
+									/>
+									<select
+										value={verifyPlan}
+										onChange={(e) => setVerifyPlan(e.target.value as any)}
+										className="h-8 text-xs bg-muted border border-border rounded-md px-2 text-foreground"
+									>
+										<option value="Annual Pro">Annual (₦99k)</option>
+										<option value="Monthly Pro">Monthly (₦12.5k)</option>
+									</select>
+									<Button
+										type="submit"
+										size="sm"
+										disabled={isVerifying || !verifyTxId.trim()}
+										className="h-8 text-xs bg-orange-500 hover:bg-orange-600 text-white shrink-0"
+									>
+										{isVerifying ? (
+											<RefreshCw className="size-3.5 animate-spin" />
+										) : (
+											"Verify & Record"
+										)}
+									</Button>
+								</form>
+							</div>
 
-									{/* Make colors better */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<Sliders className="size-3 text-purple-500" /> Make colors better
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-500 border-orange-500/30">PRO</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.colorBetterCount ?? 89).toLocaleString()} Passes
-										</div>
-										<div className="text-[10px] text-muted-foreground">AI color enhancement &amp; vibrancy</div>
-									</div>
-
-									{/* Make colors consistent */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<Film className="size-3 text-indigo-500" /> Make colors consistent
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-500 border-orange-500/30">PRO</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.colorConsistentCount ?? 64).toLocaleString()} Matches
-										</div>
-										<div className="text-[10px] text-muted-foreground">Auto-match exposure &amp; white balance</div>
-									</div>
-
-									{/* Make volume consistent */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<DollarSign className="size-3 text-emerald-500" /> Make volume consistent
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-emerald-500 border-emerald-500/30">DSP</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.volumeConsistentCount ?? 118).toLocaleString()} Levels
-										</div>
-										<div className="text-[10px] text-muted-foreground">Dynamic gain leveling &amp; loudness</div>
-									</div>
-
-									{/* Make voice clearer */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<Mic className="size-3 text-cyan-500" /> Make voice clearer
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-cyan-500 border-cyan-500/30">DSP</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.voiceClearerCount ?? 173).toLocaleString()} Boosts
-										</div>
-										<div className="text-[10px] text-muted-foreground">Background noise reduction &amp; vocal boost</div>
-									</div>
-
-									{/* Make video clearer (HD) */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="text-[11px] text-muted-foreground flex items-center justify-between">
-											<span className="flex items-center gap-1.5 font-medium">
-												<Sparkles className="size-3 text-blue-500" /> Make video clearer (HD)
-											</span>
-											<Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-500 border-orange-500/30">PRO</Badge>
-										</div>
-										<div className="text-lg font-bold font-clash text-foreground">
-											{(telemetry?.videoHdCount ?? 97).toLocaleString()} Upscales
-										</div>
-										<div className="text-[10px] text-muted-foreground">Super-resolution sharpening</div>
-									</div>
-
-									{/* Retouch face */}
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1 sm:col-span-2 lg:col-span-3">
-										<div className="flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<div className="size-8 rounded-lg bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold">
-													✨
-												</div>
-												<div>
-													<div className="text-xs font-semibold text-foreground flex items-center gap-2">
-														<span>Retouch face</span>
-														<Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-500 border-orange-500/30">PRO</Badge>
-													</div>
-													<div className="text-[11px] text-muted-foreground">
-														Skin smoothing &amp; facial adjustments • {(telemetry?.faceRetouchCount ?? 52).toLocaleString()} portrait enhancements applied
-													</div>
-												</div>
-											</div>
-											<Badge className="bg-pink-500/10 text-pink-500 border-pink-500/30 text-xs">
-												AI Active
-											</Badge>
-										</div>
-									</div>
+							{/* Grant Pro Membership Tool */}
+							<div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-xs">
+								<div className="flex items-center justify-between">
+									<h2 className="text-sm font-bold font-clash text-foreground flex items-center gap-2">
+										<UserPlus className="size-4 text-emerald-500" />
+										Grant Pro Membership
+									</h2>
+									<Badge variant="outline" className="text-[10px]">
+										Instant Access
+									</Badge>
 								</div>
+								<p className="text-xs text-muted-foreground">
+									Grant complimentary lifetime Pro access to any user account.
+								</p>
 
-								{/* Timeline Audio Tracks & Exports Tracking */}
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-									<div className="p-3.5 rounded-lg bg-muted/20 border border-border flex items-center justify-between">
-										<div className="flex items-center gap-3">
-											<div className="size-9 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center font-bold text-xs">
-												+A
-											</div>
-											<div>
-												<div className="text-xs font-semibold text-foreground">
-													Audio Tracks Ingested
-												</div>
-												<div className="text-[11px] text-muted-foreground">
-													{(telemetry?.audioTracksCount ?? 221).toLocaleString()} timeline layers mixed
-												</div>
-											</div>
-										</div>
-										<Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-xs">
-											Live
-										</Badge>
-									</div>
+								<div className="flex gap-2">
+									<Input
+										placeholder="user@example.com"
+										value={grantEmail}
+										onChange={(e) => setGrantEmail(e.target.value)}
+										className="h-8 text-xs"
+									/>
+									<Button
+										size="sm"
+										onClick={() => handleGrantPro(grantEmail, grantName)}
+										disabled={!grantEmail.trim()}
+										className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+									>
+										Grant Pro Access
+									</Button>
+								</div>
+							</div>
+						</div>
 
-									<div className="p-3.5 rounded-lg bg-muted/20 border border-border flex items-center justify-between">
-										<div className="flex items-center gap-3">
-											<div className="size-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center font-bold text-xs">
-												4K
-											</div>
-											<div>
-												<div className="text-xs font-semibold text-foreground">
-													Hardware Exports
-												</div>
-												<div className="text-[11px] text-muted-foreground">
-													{(telemetry?.exportCount ?? 384).toLocaleString()} video renders exported
-												</div>
-											</div>
-										</div>
-										<Badge className="bg-purple-500/10 text-purple-500 border-purple-500/30 text-xs">
-											WebGPU
-										</Badge>
-									</div>
+						{/* Real Telemetry Feature Counts */}
+						<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+							<div className="flex items-center justify-between">
+								<h2 className="text-sm font-bold font-clash text-foreground flex items-center gap-2">
+									<Sparkles className="size-4 text-orange-500" />
+									Live Tool Usage &amp; Processing Statistics
+								</h2>
+								<div className="flex items-center gap-2">
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => {
+											clearTelemetryData();
+											setTelemetry(getTelemetryData());
+											toast.success("Telemetry counters reset to zero.");
+										}}
+										className="h-7 text-[11px] text-muted-foreground hover:text-destructive"
+									>
+										<Trash2 className="size-3 mr-1" /> Reset Counters
+									</Button>
+									<Badge variant="outline" className="text-[10px]">
+										Live Browser Tracking
+									</Badge>
 								</div>
 							</div>
 
-							{/* Gateway & Infrastructure Quick Status */}
-							<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
-								<h2 className="text-sm font-bold font-clash text-foreground flex items-center gap-2">
-									<Activity className="size-4 text-emerald-500" />
-									Active Gateways
-								</h2>
-
-								<div className="space-y-3 text-xs">
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="flex items-center justify-between">
-											<span className="font-semibold text-foreground">Flutterwave API</span>
-											<span className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
-												<CheckCircle2 className="size-3" /> Live
-											</span>
-										</div>
-										<div className="text-[10px] text-muted-foreground font-mono truncate">
-											Key: {process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK-33162c..."}
-										</div>
+							<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<Sparkles className="size-3 text-amber-500" /> AI Suggestions
 									</div>
-
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="flex items-center justify-between">
-											<span className="font-semibold text-foreground">Groq LPU Copilot</span>
-											<span className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
-												<CheckCircle2 className="size-3" /> 18ms
-											</span>
-										</div>
-										<div className="text-[10px] text-muted-foreground">
-											Llama-3.3-70b-versatile Agentic Tools
-										</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.smartSuggestionsCount ?? 0}
 									</div>
+									<div className="text-[10px] text-muted-foreground">Scans run</div>
+								</div>
 
-									<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
-										<div className="flex items-center justify-between">
-											<span className="font-semibold text-foreground">Admin Permission Filter</span>
-											<span className="text-[10px] text-orange-500 font-bold">
-												@gmail.com Only
-											</span>
-										</div>
-										<div className="text-[10px] text-muted-foreground">
-											Enforced server-side &amp; client-side
-										</div>
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<Sliders className="size-3 text-purple-500" /> Color Better
 									</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.colorBetterCount ?? 0}
+									</div>
+									<div className="text-[10px] text-muted-foreground">AI Enhancements</div>
+								</div>
+
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<Film className="size-3 text-indigo-500" /> Color Match
+									</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.colorConsistentCount ?? 0}
+									</div>
+									<div className="text-[10px] text-muted-foreground">Multi-clip matches</div>
+								</div>
+
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<DollarSign className="size-3 text-emerald-500" /> Volume Match
+									</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.volumeConsistentCount ?? 0}
+									</div>
+									<div className="text-[10px] text-muted-foreground">Gain levelings</div>
+								</div>
+
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<Mic className="size-3 text-cyan-500" /> Voice Clarity
+									</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.voiceClearerCount ?? 0}
+									</div>
+									<div className="text-[10px] text-muted-foreground">DSP isolations</div>
+								</div>
+
+								<div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1">
+									<div className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
+										<Zap className="size-3 text-blue-500" /> Video Exports
+									</div>
+									<div className="text-xl font-bold font-clash text-foreground">
+										{telemetry?.exportCount ?? 0}
+									</div>
+									<div className="text-[10px] text-muted-foreground">Renders completed</div>
 								</div>
 							</div>
 						</div>
 					</>
 				)}
 
+				{/* TRANSACTIONS TAB */}
 				{activeTab === "transactions" && (
 					<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
 						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 							<div>
-								<h2 className="text-base font-bold font-clash text-foreground">
-									Flutterwave Payment Transactions
+								<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
+									<span>Flutterwave Payment Transactions</span>
+									<Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-xs">
+										{transactions.length} Verified
+									</Badge>
 								</h2>
 								<p className="text-xs text-muted-foreground">
-									Verified transactions received through the Flutterwave payment gateway.
+									Real completed transactions received via the Flutterwave payment gateway.
+								</p>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<div className="relative w-full sm:w-64">
+									<Search className="size-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+									<Input
+										placeholder="Search email, ref..."
+										value={searchQuery}
+										onChange={(e) => setSearchQuery(e.target.value)}
+										className="h-8 pl-8 text-xs"
+									/>
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={exportTransactionsCSV}
+									className="h-8 text-xs gap-1.5 shrink-0"
+									disabled={transactions.length === 0}
+								>
+									<Download className="size-3.5" /> CSV
+								</Button>
+							</div>
+						</div>
+
+						{filteredTransactions.length === 0 ? (
+							<div className="p-8 text-center border border-dashed border-border rounded-xl space-y-3 bg-muted/10">
+								<div className="size-10 rounded-full bg-orange-500/10 text-orange-500 flex items-center justify-center mx-auto">
+									<CreditCard className="size-5" />
+								</div>
+								<div className="space-y-1">
+									<div className="text-sm font-semibold text-foreground">
+										No Real Transactions Recorded Yet
+									</div>
+									<p className="text-xs text-muted-foreground max-w-sm mx-auto">
+										All dummy transactions have been removed. When users checkout via Flutterwave, real payments will automatically record here. You can also paste any transaction ID above to verify it on-demand.
+									</p>
+								</div>
+							</div>
+						) : (
+							<div className="overflow-x-auto">
+								<table className="w-full text-left text-xs">
+									<thead>
+										<tr className="border-b border-border text-muted-foreground">
+											<th className="py-2.5 px-3">Transaction Ref</th>
+											<th className="py-2.5 px-3">Customer Email</th>
+											<th className="py-2.5 px-3">Plan</th>
+											<th className="py-2.5 px-3">Amount</th>
+											<th className="py-2.5 px-3">Method</th>
+											<th className="py-2.5 px-3">Status</th>
+											<th className="py-2.5 px-3">Date</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-border/60">
+										{filteredTransactions.map((tx) => (
+											<tr key={tx.id} className="hover:bg-muted/30 transition-colors">
+												<td className="py-3 px-3 font-mono text-muted-foreground text-[11px]">
+													{tx.tx_ref}
+												</td>
+												<td className="py-3 px-3">
+													<div className="font-semibold text-foreground">{tx.customer}</div>
+													<div className="text-[10px] text-muted-foreground">{tx.email}</div>
+												</td>
+												<td className="py-3 px-3">
+													<Badge
+														variant="outline"
+														className="text-[10px] text-orange-500 border-orange-500/30"
+													>
+														{tx.plan}
+													</Badge>
+												</td>
+												<td className="py-3 px-3">
+													<div className="font-bold text-foreground">
+														₦{tx.amountNgn.toLocaleString()}
+													</div>
+													<div className="text-[10px] text-muted-foreground">
+														${tx.amountUsd} USD
+													</div>
+												</td>
+												<td className="py-3 px-3 text-muted-foreground">{tx.method}</td>
+												<td className="py-3 px-3">
+													<span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 font-semibold">
+														<CheckCircle2 className="size-3" /> {tx.status}
+													</span>
+												</td>
+												<td className="py-3 px-3 text-muted-foreground">{tx.date}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* USERS TAB */}
+				{activeTab === "users" && (
+					<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+							<div>
+								<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
+									<span>Registered User Accounts</span>
+									<Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs">
+										{usersList.length} Accounts
+									</Badge>
+								</h2>
+								<p className="text-xs text-muted-foreground">
+									Manage account privileges, administer Pro tiers, and monitor active sessions.
 								</p>
 							</div>
 
 							<div className="relative w-full sm:w-64">
 								<Search className="size-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
 								<Input
-									placeholder="Search email, customer, or ref..."
+									placeholder="Search name or email..."
 									value={searchQuery}
 									onChange={(e) => setSearchQuery(e.target.value)}
 									className="h-8 pl-8 text-xs"
@@ -868,79 +1264,32 @@ export default function AdminPage() {
 							<table className="w-full text-left text-xs">
 								<thead>
 									<tr className="border-b border-border text-muted-foreground">
-										<th className="py-2.5 px-3">Transaction Ref</th>
-										<th className="py-2.5 px-3">Customer Email</th>
-										<th className="py-2.5 px-3">Plan</th>
-										<th className="py-2.5 px-3">Amount</th>
-										<th className="py-2.5 px-3">Method</th>
-										<th className="py-2.5 px-3">Status</th>
-										<th className="py-2.5 px-3">Date</th>
-									</tr>
-								</thead>
-								<tbody className="divide-y divide-border/60">
-									{filteredTransactions.map((tx) => (
-										<tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-											<td className="py-3 px-3 font-mono text-muted-foreground">{tx.tx_ref}</td>
-											<td className="py-3 px-3">
-												<div className="font-semibold text-foreground">{tx.customer}</div>
-												<div className="text-[10px] text-muted-foreground">{tx.email}</div>
-											</td>
-											<td className="py-3 px-3">
-												<Badge variant="outline" className="text-[10px] text-orange-500 border-orange-500/30">
-													{tx.plan}
-												</Badge>
-											</td>
-											<td className="py-3 px-3">
-												<div className="font-bold text-foreground">₦{tx.amountNgn.toLocaleString()}</div>
-												<div className="text-[10px] text-muted-foreground">${tx.amountUsd}</div>
-											</td>
-											<td className="py-3 px-3 text-muted-foreground">{tx.method}</td>
-											<td className="py-3 px-3">
-												<span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 font-semibold">
-													<CheckCircle2 className="size-3" /> Successful
-												</span>
-											</td>
-											<td className="py-3 px-3 text-muted-foreground">{tx.date}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				)}
-
-				{activeTab === "users" && (
-					<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
-						<div>
-							<h2 className="text-base font-bold font-clash text-foreground">
-								Registered Accounts &amp; Admin Privileges
-							</h2>
-							<p className="text-xs text-muted-foreground">
-								Only users with @gmail.com domains are granted administrator privileges to access this area.
-							</p>
-						</div>
-
-						<div className="overflow-x-auto">
-							<table className="w-full text-left text-xs">
-								<thead>
-									<tr className="border-b border-border text-muted-foreground">
 										<th className="py-2.5 px-3">User</th>
 										<th className="py-2.5 px-3">Email</th>
-										<th className="py-2.5 px-3">Admin Permission</th>
+										<th className="py-2.5 px-3">Admin Privilege</th>
 										<th className="py-2.5 px-3">Membership Tier</th>
-										<th className="py-2.5 px-3">Projects</th>
-										<th className="py-2.5 px-3">Joined</th>
+										<th className="py-2.5 px-3">Source</th>
+										<th className="py-2.5 px-3 text-right">Actions</th>
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-border/60">
-									{usersData.map((u) => (
+									{filteredUsers.map((u) => (
 										<tr key={u.id} className="hover:bg-muted/30 transition-colors">
-											<td className="py-3 px-3 font-semibold text-foreground">{u.name}</td>
-											<td className="py-3 px-3 font-mono">{u.email}</td>
+											<td className="py-3 px-3">
+												<div className="font-semibold text-foreground flex items-center gap-1.5">
+													<span>{u.name}</span>
+													{u.email.toLowerCase() === currentEmail?.toLowerCase() && (
+														<Badge className="bg-orange-500/10 text-orange-500 border-none text-[9px] py-0 px-1">
+															You
+														</Badge>
+													)}
+												</div>
+											</td>
+											<td className="py-3 px-3 font-mono text-[11px]">{u.email}</td>
 											<td className="py-3 px-3">
 												{u.email.toLowerCase().endsWith("@gmail.com") ? (
 													<Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px]">
-														Authorized Admin (@gmail.com)
+														Authorized Admin
 													</Badge>
 												) : (
 													<Badge variant="outline" className="text-[10px] text-muted-foreground">
@@ -949,12 +1298,40 @@ export default function AdminPage() {
 												)}
 											</td>
 											<td className="py-3 px-3">
-												<Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-[10px]">
-													{u.plan}
-												</Badge>
+												{u.isPro ? (
+													<Badge className="bg-orange-500/10 text-orange-500 border-orange-500/30 text-[10px]">
+														{u.plan}
+													</Badge>
+												) : (
+													<Badge variant="outline" className="text-[10px] text-muted-foreground">
+														Free Tier
+													</Badge>
+												)}
 											</td>
-											<td className="py-3 px-3 text-muted-foreground">{u.projectsCount}</td>
-											<td className="py-3 px-3 text-muted-foreground">{u.joined}</td>
+											<td className="py-3 px-3 text-muted-foreground text-[11px]">
+												{u.source}
+											</td>
+											<td className="py-3 px-3 text-right space-x-1">
+												{u.isPro ? (
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => handleRevokePro(u.email)}
+														className="h-7 text-[10px] text-destructive hover:bg-destructive/10"
+													>
+														Revoke Pro
+													</Button>
+												) : (
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => handleGrantPro(u.email, u.name)}
+														className="h-7 text-[10px] text-emerald-500 hover:bg-emerald-500/10"
+													>
+														Grant Pro
+													</Button>
+												)}
+											</td>
 										</tr>
 									))}
 								</tbody>
@@ -963,88 +1340,214 @@ export default function AdminPage() {
 					</div>
 				)}
 
+				{/* TELEMETRY ACTIVITY TAB */}
 				{activeTab === "telemetry" && (
 					<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
 						<div className="flex items-center justify-between">
 							<div>
 								<h2 className="text-base font-bold font-clash text-foreground">
-									Live Feature Activity Feed
+									Live Tool Usage Activity Feed
 								</h2>
 								<p className="text-xs text-muted-foreground">
-									Real-time event stream of AI optimizations, DSP voice clarity, color enhancements, and timeline actions.
+									Real-time event stream recorded from your actual video editing sessions.
 								</p>
 							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setTelemetry(getTelemetryData())}
-								className="text-xs gap-1.5"
-							>
-								<RefreshCw className="size-3" /> Refresh Feed
-							</Button>
+							<div className="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setTelemetry(getTelemetryData())}
+									className="text-xs gap-1.5"
+								>
+									<RefreshCw className="size-3" /> Refresh Feed
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => {
+										clearTelemetryData();
+										setTelemetry(getTelemetryData());
+										toast.success("Event feed cleared.");
+									}}
+									className="text-xs text-muted-foreground hover:text-destructive"
+								>
+									Clear Feed
+								</Button>
+							</div>
 						</div>
 
-						<div className="overflow-x-auto">
-							<table className="w-full text-left text-xs">
-								<thead>
-									<tr className="border-b border-border text-muted-foreground">
-										<th className="py-2.5 px-3">Feature Name</th>
-										<th className="py-2.5 px-3">Type</th>
-										<th className="py-2.5 px-3">Action Details</th>
-										<th className="py-2.5 px-3">Time</th>
-									</tr>
-								</thead>
-								<tbody className="divide-y divide-border/60">
-									{(telemetry?.events || []).map((evt) => (
-										<tr key={evt.id} className="hover:bg-muted/30 transition-colors">
-											<td className="py-3 px-3 font-semibold text-foreground flex items-center gap-2">
-												<CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-												<span>{evt.name}</span>
-											</td>
-											<td className="py-3 px-3">
-												<Badge variant="outline" className="text-[10px] font-mono capitalize">
-													{evt.type.replace(/_/g, " ")}
-												</Badge>
-											</td>
-											<td className="py-3 px-3 text-muted-foreground">
-												{evt.details || "Timeline optimization completed successfully"}
-											</td>
-											<td className="py-3 px-3 text-muted-foreground font-mono">
-												{evt.timestamp}
-											</td>
+						{(!telemetry?.events || telemetry.events.length === 0) ? (
+							<div className="p-8 text-center border border-dashed border-border rounded-xl space-y-2 bg-muted/10">
+								<Activity className="size-8 text-muted-foreground mx-auto" />
+								<div className="text-xs font-semibold text-foreground">
+									No Activity Events Yet
+								</div>
+								<p className="text-xs text-muted-foreground max-w-sm mx-auto">
+									As you use smart suggestions, adjust volume, grade colors, and export video clips in the editor, real telemetry records will stream here.
+								</p>
+							</div>
+						) : (
+							<div className="overflow-x-auto">
+								<table className="w-full text-left text-xs">
+									<thead>
+										<tr className="border-b border-border text-muted-foreground">
+											<th className="py-2.5 px-3">Feature Name</th>
+											<th className="py-2.5 px-3">Type</th>
+											<th className="py-2.5 px-3">Action Details</th>
+											<th className="py-2.5 px-3">Time</th>
 										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
+									</thead>
+									<tbody className="divide-y divide-border/60">
+										{telemetry.events.map((evt) => (
+											<tr key={evt.id} className="hover:bg-muted/30 transition-colors">
+												<td className="py-3 px-3 font-semibold text-foreground flex items-center gap-2">
+													<CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+													<span>{evt.name}</span>
+												</td>
+												<td className="py-3 px-3">
+													<Badge variant="outline" className="text-[10px] font-mono capitalize">
+														{evt.type.replace(/_/g, " ")}
+													</Badge>
+												</td>
+												<td className="py-3 px-3 text-muted-foreground">
+													{evt.details || "Action completed"}
+												</td>
+												<td className="py-3 px-3 text-muted-foreground font-mono">
+													{evt.timestamp}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
 					</div>
 				)}
 
+				{/* SYSTEM & DIAGNOSTICS TAB */}
 				{activeTab === "system" && (
-					<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
-						<h2 className="text-base font-bold font-clash text-foreground">
-							System Diagnostics &amp; Engine Status
-						</h2>
+					<div className="space-y-6">
+						<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+							<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
+								<Cpu className="size-4 text-orange-500" />
+								API Gateways &amp; Cloud Health
+							</h2>
 
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-							<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-								<div className="font-semibold text-foreground flex items-center justify-between">
-									<span>Security &amp; Secret Isolation</span>
-									<span className="text-emerald-500 font-bold">Secure</span>
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+								{/* Groq LPU Copilot */}
+								<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+									<div className="font-semibold text-foreground flex items-center justify-between">
+										<span>Groq LPU AI Copilot</span>
+										{groqPingMs !== null ? (
+											<span className="text-emerald-500 font-bold flex items-center gap-1">
+												<CheckCircle2 className="size-3" /> {groqPingMs}ms
+											</span>
+										) : (
+											<span className="text-muted-foreground font-normal">Ready</span>
+										)}
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										Fast inference with Llama-3.3-70b-versatile and 21 editor tools.
+									</p>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={testGroqConnection}
+										disabled={isTestingGroq}
+										className="h-7 text-[10px] w-full mt-2"
+									>
+										{isTestingGroq ? (
+											<RefreshCw className="size-3 animate-spin mr-1" />
+										) : (
+											<Zap className="size-3 mr-1 text-orange-500" />
+										)}
+										Test Live Groq Connection
+									</Button>
 								</div>
-								<p className="text-[11px] text-muted-foreground leading-relaxed">
-									Flutterwave Secret Key &amp; Encryption Key are stored in server-only environment variables and verified via server API endpoints. No private keys are bundled to client browsers.
-								</p>
+
+								{/* Flutterwave Status */}
+								<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+									<div className="font-semibold text-foreground flex items-center justify-between">
+										<span>Flutterwave Payment Gateway</span>
+										<span className="text-emerald-500 font-bold flex items-center gap-1">
+											<CheckCircle2 className="size-3" /> Online
+										</span>
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										Public Key:{" "}
+										<span className="font-mono text-[10px]">
+											{process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY
+												? `${process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY.slice(0, 16)}...`
+												: "Configured"}
+										</span>
+									</p>
+									<div className="text-[10px] text-muted-foreground font-medium pt-1">
+										Card, USSD &amp; Bank Transfer channels active
+									</div>
+								</div>
+
+								{/* Firestore Connection */}
+								<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+									<div className="font-semibold text-foreground flex items-center justify-between">
+										<span>Firebase Firestore DB</span>
+										{firestoreConnected ? (
+											<span className="text-emerald-500 font-bold flex items-center gap-1">
+												<CheckCircle2 className="size-3" /> Connected
+											</span>
+										) : (
+											<span className="text-amber-500 font-bold">Local Sync</span>
+										)}
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										Project: <span className="font-mono">ambercut-d07ef</span>
+									</p>
+									<div className="text-[10px] text-muted-foreground font-medium pt-1">
+										Chat messages, users &amp; transaction synchronization
+									</div>
+								</div>
 							</div>
+						</div>
 
-							<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-								<div className="font-semibold text-foreground flex items-center justify-between">
-									<span>WebAssembly (WASM) Engine</span>
-									<span className="text-emerald-500 font-bold">opencut-wasm v0.2.10</span>
+						{/* Storage Diagnostics */}
+						<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
+							<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
+								<HardDrive className="size-4 text-purple-500" />
+								Local Browser Storage Quota &amp; OPFS
+							</h2>
+
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+								<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+									<div className="font-semibold text-foreground flex items-center justify-between">
+										<span>Storage Capacity Gauge</span>
+										<span className="text-purple-500 font-bold">
+											{storageQuota?.usageBytes
+												? formatStorageBytes({ bytes: storageQuota.usageBytes })
+												: "Active"}{" "}
+											used
+										</span>
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										Available:{" "}
+										{storageQuota?.availableBytes
+											? formatStorageBytes({ bytes: storageQuota.availableBytes })
+											: "Calculating..."}
+										{" • "}
+										Total Quota:{" "}
+										{storageQuota?.quotaBytes
+											? formatStorageBytes({ bytes: storageQuota.quotaBytes })
+											: "Browser Allocated"}
+									</p>
 								</div>
-								<p className="text-[11px] text-muted-foreground leading-relaxed">
-									64-bit integer tick precision time math (`MediaTime(i64)`) active with zero floating point drift across multiple audio &amp; video layers.
-								</p>
+
+								<div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+									<div className="font-semibold text-foreground flex items-center justify-between">
+										<span>WASM Tick-Precision Engine</span>
+										<span className="text-emerald-500 font-bold">opencut-wasm v0.2.10</span>
+									</div>
+									<p className="text-[11px] text-muted-foreground leading-relaxed">
+										MediaTime 64-bit integer tick math active with zero drift playback across all video and audio tracks.
+									</p>
+								</div>
 							</div>
 						</div>
 					</div>
