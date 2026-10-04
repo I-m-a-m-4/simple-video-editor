@@ -556,7 +556,7 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 									key={i}
 									type="button"
 									onClick={() => setText(suggestion)}
-									className="px-2 py-0.5 rounded text-[10px] bg-muted/50 hover:bg-muted text-muted-foreground border border-border/50 truncate max-w-xs"
+									className="px-2 py-0.5 rounded text-[10px] bg-muted/50 hover:bg-muted text-muted-foreground border border-border/50 truncate max-w-xs shrink-0"
 								>
 									{suggestion}
 								</button>
@@ -565,8 +565,8 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 					</div>
 
 					{/* Controls */}
-					<div className="grid grid-cols-2 gap-4 p-3 rounded-lg bg-muted/30 border border-border">
-						<div className="flex flex-col gap-1.5">
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 rounded-lg bg-muted/30 border border-border">
+						<div className="flex flex-col gap-3">
 							<div className="flex items-center justify-between text-xs">
 								<span className="text-muted-foreground">Speed Rate</span>
 								<span className="text-orange-500 font-mono font-bold">{rate.toFixed(1)}x</span>
@@ -580,7 +580,7 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 							/>
 						</div>
 
-						<div className="flex flex-col gap-1.5">
+						<div className="flex flex-col gap-3">
 							<div className="flex items-center justify-between text-xs">
 								<span className="text-muted-foreground">Pitch</span>
 								<span className="text-orange-500 font-mono font-bold">{pitch.toFixed(1)}x</span>

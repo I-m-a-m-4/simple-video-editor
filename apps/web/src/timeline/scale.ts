@@ -1,3 +1,4 @@
 export const BASE_TIMELINE_PIXELS_PER_SECOND = 50;
 export const TIMELINE_ZOOM_MIN = 0.1;
 export const TIMELINE_ZOOM_MAX = 100;
+export const MIN_TIMELINE_ELEMENT_WIDTH_PX = 32;

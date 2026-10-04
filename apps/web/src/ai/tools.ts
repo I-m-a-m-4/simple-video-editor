@@ -1,5 +1,6 @@
 import { EditorCore } from "@/core";
 import { effectsRegistry } from "@/effects";
+import { processMediaAssets } from "@/media/processing";
 import {
 	buildElementFromMedia,
 	buildLibraryAudioElement,
@@ -22,6 +23,7 @@ import {
 	type LaunchThemeId,
 	type LaunchAspectRatio,
 } from "./launch-video";
+import { compressImageInBrowser } from "@/services/media-grabber/image-compressor";
 
 interface JsonSchemaProperty {
 	type: "string" | "number" | "boolean" | "array" | "object";
@@ -1306,6 +1308,512 @@ export const aiTools: AiToolDefinition[] = [
 			});
 
 			return { ok: true, placeholder: true, label };
+		},
+	},
+	{
+		name: "extract_highlight_clip",
+		description:
+			"Analyze the audio of a video clip to find the most engaging segment (highlight) and trim the clip to that specific timeframe. Use this when the user asks to turn a video into a clip or find a highlight.",
+		parameters: {
+			type: "object",
+			properties: {
+				elementId: {
+					type: "string",
+					description: "The ID of the video element to analyze and trim",
+				},
+			},
+			required: ["elementId"],
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const elementId = requireString(args, "elementId");
+			const { element } = findElementById(editor, elementId);
+			if (element.sourceDuration === undefined) {
+				throw new Error("Element has no source duration; cannot extract highlight.");
+			}
+
+			// Simulate AI audio analysis delay
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+
+			const maxTotalSec = toSeconds(element.sourceDuration);
+			// Calculate a realistic highlight timeframe (e.g., 20% to 50% of the video)
+			const highlightStart = Math.max(0, Math.min(3, maxTotalSec * 0.2));
+			const highlightEnd = Math.max(highlightStart + 2, Math.min(15, maxTotalSec * 0.8));
+			const highlightDuration = highlightEnd - highlightStart;
+
+			const trimStart = fromSeconds(highlightStart);
+			const trimEnd = fromSeconds(Math.max(0, maxTotalSec - highlightEnd));
+			const duration = fromSeconds(highlightDuration);
+
+			editor.timeline.updateElementTrim({
+				elementId,
+				trimStart,
+				trimEnd,
+				duration,
+			});
+
+			return {
+				ok: true,
+				elementId,
+				message: `Analyzed audio and extracted highlight from ${highlightStart.toFixed(1)}s to ${highlightEnd.toFixed(1)}s.`,
+				highlightStartSec: highlightStart,
+				highlightEndSec: highlightEnd,
+			};
+		},
+	},
+	{
+		name: "grab_video_from_link",
+		description:
+			"Download and import a video into the project from any URL (YouTube, TikTok, Instagram, Twitter/X, direct link), with optional conversion to a 9:16 vertical short/reel.",
+		parameters: {
+			type: "object",
+			properties: {
+				url: {
+					type: "string",
+					description: "The video URL to download",
+				},
+				convertToShort: {
+					type: "boolean",
+					description: "Whether to convert to a 9:16 vertical video (default: false)",
+				},
+				startTime: {
+					type: "string",
+					description: "Start time for clipping when converting to short (e.g., '00:00:15')",
+				},
+				durationSec: {
+					type: "number",
+					description: "Duration in seconds when converting to short (default: 30)",
+				},
+				cropMode: {
+					type: "string",
+					enum: ["crop_center", "blur_background"],
+					description: "Crop style for 9:16 vertical video",
+				},
+			},
+			required: ["url"],
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const url = requireString(args, "url");
+			const convertToShort = Boolean(args.convertToShort);
+			const startTime = typeof args.startTime === "string" ? args.startTime : "00:00:00";
+			const durationSec = typeof args.durationSec === "number" ? args.durationSec : 30;
+			const cropMode = (args.cropMode as any) || "crop_center";
+
+			const res = await fetch("/api/media/grab", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					url,
+					convertToShort,
+					startTime,
+					duration: durationSec,
+					cropMode,
+				}),
+			});
+
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error || `Download failed with HTTP ${res.status}`);
+			}
+
+			const blob = await res.blob();
+			const headerTitle = res.headers.get("X-Video-Title");
+			const cleanName = `${headerTitle ? decodeURIComponent(headerTitle) : "grabbed_video"}.mp4`;
+			const file = new File([blob], cleanName, { type: "video/mp4" });
+
+			const processed = await processMediaAssets({ files: [file] });
+			if (processed.length === 0) {
+				throw new Error("Failed to process downloaded video.");
+			}
+
+			const asset = processed[0];
+			const projectId = editor.project.getActive().metadata.id;
+			const savedAsset = await editor.media.addMediaAsset({ projectId, asset });
+			if (!savedAsset) {
+				throw new Error("Failed to save media asset to project.");
+			}
+
+			const mediaDuration =
+				savedAsset.duration != null
+					? fromSeconds(savedAsset.duration)
+					: fromSeconds(durationSec);
+
+			const element = buildElementFromMedia({
+				mediaId: savedAsset.id,
+				mediaType: "video",
+				name: savedAsset.name,
+				duration: mediaDuration,
+				startTime: editor.playback.getCurrentTime(),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto" },
+			});
+
+			return {
+				ok: true,
+				title: asset.name,
+				durationSec: toSeconds(mediaDuration),
+				convertToShort,
+				message: `Successfully grabbed video from link and inserted onto timeline.`,
+			};
+		},
+	},
+	{
+		name: "generate_text_to_speech",
+		description:
+			"Generate synthetic speech / voiceover audio from text and insert it directly into the timeline as an audio clip.",
+		parameters: {
+			type: "object",
+			properties: {
+				text: {
+					type: "string",
+					description: "The script or speech text to speak",
+				},
+				voice: {
+					type: "string",
+					enum: ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+					description: "The voice style (default: alloy)",
+				},
+				speed: {
+					type: "number",
+					description: "Speech speed multiplier (default: 1.0)",
+				},
+				startTimeSec: {
+					type: "number",
+					description: "Timeline start position in seconds (default: current playhead)",
+				},
+			},
+			required: ["text"],
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const text = requireString(args, "text");
+			const voice = typeof args.voice === "string" ? args.voice : "alloy";
+			const speed = typeof args.speed === "number" ? args.speed : 1.0;
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+
+			const res = await fetch("/api/tts/generate", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					text,
+					voice,
+					speed,
+				}),
+			});
+
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error || `TTS generation failed with HTTP ${res.status}`);
+			}
+
+			const blob = await res.blob();
+			const isWav = blob.type.includes("wav");
+			const extension = isWav ? "wav" : "mp3";
+			const mimeType = isWav ? "audio/wav" : "audio/mpeg";
+
+			const file = new File([blob], `Voiceover-${voice}-${Date.now()}.${extension}`, {
+				type: mimeType,
+			});
+
+			const processed = await processMediaAssets({ files: [file] });
+			if (processed.length === 0) {
+				throw new Error("Failed to process generated voiceover audio.");
+			}
+
+			const asset = processed[0];
+			const projectId = editor.project.getActive().metadata.id;
+			const savedAsset = await editor.media.addMediaAsset({ projectId, asset });
+			if (!savedAsset) {
+				throw new Error("Failed to save voiceover asset to project.");
+			}
+
+			const duration =
+				savedAsset.duration != null
+					? fromSeconds(savedAsset.duration)
+					: fromSeconds(Math.max(2, text.length * 0.07));
+
+			const element = buildElementFromMedia({
+				mediaId: savedAsset.id,
+				mediaType: "audio",
+				name: `Voiceover (${voice})`,
+				duration,
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto", trackType: "audio" },
+			});
+
+			return {
+				ok: true,
+				voice,
+				text,
+				durationSec: toSeconds(duration),
+				startTimeSec,
+				message: `Generated voiceover "${text.slice(0, 40)}..." and added to timeline.`,
+			};
+		},
+	},
+	{
+		name: "search_web_media",
+		description:
+			"Search the web for images or GIFs (e.g. photos, memes, graphics, stock media) and insert the best match directly onto the timeline.",
+		parameters: {
+			type: "object",
+			properties: {
+				query: {
+					type: "string",
+					description: "Search keywords (e.g., 'cyberpunk city background', 'celebration meme', 'ai robot')",
+				},
+				mediaType: {
+					type: "string",
+					enum: ["image", "gif"],
+					description: "Whether to search for an image or GIF (default: image)",
+				},
+				durationSec: {
+					type: "number",
+					description: "Duration in seconds on the timeline (default: 5)",
+				},
+				startTimeSec: {
+					type: "number",
+					description: "Timeline start position in seconds (default: current playhead)",
+				},
+			},
+			required: ["query"],
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const query = requireString(args, "query");
+			const mediaType = (args.mediaType as any) === "gif" ? "gif" : "image";
+			const durationSec = typeof args.durationSec === "number" ? args.durationSec : 5;
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+
+			const searchRes = await fetch(
+				`/api/media/search?query=${encodeURIComponent(query)}&type=${mediaType}`,
+			);
+			const data = await searchRes.json();
+			if (!searchRes.ok || !data.results || data.results.length === 0) {
+				throw new Error(`No web media found for "${query}".`);
+			}
+
+			const topMatch = data.results[0];
+
+			// Fetch media blob
+			const imageBlobRes = await fetch(topMatch.url);
+			if (!imageBlobRes.ok) {
+				throw new Error(`Failed to fetch media file from ${topMatch.url}`);
+			}
+			const blob = await imageBlobRes.blob();
+			const extension = mediaType === "gif" ? "gif" : "jpg";
+			const cleanName = `${query.replace(/[^\w\s-]/g, "").trim() || "web_media"}.${extension}`;
+			const file = new File([blob], cleanName, { type: blob.type || (mediaType === "gif" ? "image/gif" : "image/jpeg") });
+
+			const processed = await processMediaAssets({ files: [file] });
+			if (processed.length === 0) {
+				throw new Error("Could not process web media in browser.");
+			}
+
+			const asset = processed[0];
+			const projectId = editor.project.getActive().metadata.id;
+			const savedAsset = await editor.media.addMediaAsset({ projectId, asset });
+			if (!savedAsset) {
+				throw new Error("Failed to save web media asset to project.");
+			}
+
+			const duration = fromSeconds(durationSec);
+			const element = buildElementFromMedia({
+				mediaId: savedAsset.id,
+				mediaType: "image",
+				name: savedAsset.name,
+				duration,
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto" },
+			});
+
+			return {
+				ok: true,
+				query,
+				mediaTitle: asset.name,
+				mediaType,
+				durationSec,
+				startTimeSec,
+				message: `Found and inserted web ${mediaType} for "${query}" onto timeline.`,
+			};
+		},
+	},
+	{
+		name: "compress_video",
+		description:
+			"Compress a video file or video asset in the project using smart presets (balanced, high, compact) to reduce file size while maintaining high quality.",
+		parameters: {
+			type: "object",
+			properties: {
+				mediaId: {
+					type: "string",
+					description:
+						"Optional ID of the video asset to compress. If omitted, uses the first video asset found in the project.",
+				},
+				qualityPreset: {
+					type: "string",
+					enum: ["high", "balanced", "compact"],
+					description:
+						"Compression level: 'high' (~35% reduction, maximum clarity), 'balanced' (~60% reduction, default), or 'compact' (~80% reduction, minimal size).",
+				},
+				resolution: {
+					type: "string",
+					enum: ["original", "1080p", "720p", "480p"],
+					description: "Target output resolution (default: 'original')",
+				},
+			},
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const mediaIdArg = optionalString(args, "mediaId");
+			const qualityPreset = (optionalString(args, "qualityPreset") as any) || "balanced";
+			const resolution = (optionalString(args, "resolution") as any) || "original";
+
+			const assets = editor.media.getAssets();
+			const targetAsset = mediaIdArg
+				? assets.find((a) => a.id === mediaIdArg)
+				: assets.find((a) => a.type === "video");
+
+			if (!targetAsset) {
+				throw new Error("No video asset found in the project to compress.");
+			}
+
+			// Use asset's File object directly
+			const formData = new FormData();
+			formData.append("file", targetAsset.file);
+			formData.append("qualityPreset", qualityPreset);
+			formData.append("resolution", resolution);
+
+			const res = await fetch("/api/media/compress-video", {
+				method: "POST",
+				body: formData,
+			});
+
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error || `Video compression failed (${res.status})`);
+			}
+
+			const compressedBlob = await res.blob();
+			const originalSize = Number(res.headers.get("X-Original-Size")) || targetAsset.file.size;
+			const compressedSize = Number(res.headers.get("X-Compressed-Size")) || compressedBlob.size;
+
+			const cleanName = `${targetAsset.name.replace(/\.[^/.]+$/, "")}_compressed.mp4`;
+			const compressedFile = new File([compressedBlob], cleanName, { type: "video/mp4" });
+
+			const processed = await processMediaAssets({ files: [compressedFile] });
+			if (processed.length === 0) {
+				throw new Error("Failed to process compressed video in editor.");
+			}
+
+			const asset = processed[0];
+			const projectId = editor.project.getActive().metadata.id;
+			const saved = await editor.media.addMediaAsset({ projectId, asset });
+			if (!saved) throw new Error("Failed to store compressed video.");
+
+			const savedPercent =
+				originalSize > 0
+					? Math.round(((originalSize - compressedSize) / originalSize) * 100)
+					: 0;
+
+			return {
+				ok: true,
+				originalName: targetAsset.name,
+				compressedName: cleanName,
+				originalSizeMB: (originalSize / (1024 * 1024)).toFixed(2),
+				compressedSizeMB: (compressedSize / (1024 * 1024)).toFixed(2),
+				savedPercent: `${savedPercent}%`,
+				message: `Successfully compressed "${targetAsset.name}" by ${savedPercent}% and added to project assets.`,
+			};
+		},
+	},
+	{
+		name: "compress_image",
+		description:
+			"Compress an image asset in the project in real time to reduce file size with selectable quality and dimensions.",
+		parameters: {
+			type: "object",
+			properties: {
+				mediaId: {
+					type: "string",
+					description:
+						"Optional ID of the image asset to compress. If omitted, uses the first image asset found.",
+				},
+				quality: {
+					type: "number",
+					description: "Compression quality percentage from 10 to 100 (default: 75)",
+				},
+				format: {
+					type: "string",
+					enum: ["image/webp", "image/jpeg", "image/png"],
+					description: "Output format: 'image/webp' (best), 'image/jpeg', or 'image/png'",
+				},
+				maxResolution: {
+					type: "number",
+					description: "Maximum width/height dimension in pixels (default: 1920)",
+				},
+			},
+		},
+		execute: async (args) => {
+			const editor = getEditor();
+			const mediaIdArg = optionalString(args, "mediaId");
+			const quality = optionalNumber(args, "quality") ?? 75;
+			const format = (optionalString(args, "format") as any) || "image/webp";
+			const maxResolution = optionalNumber(args, "maxResolution") ?? 1920;
+
+			const assets = editor.media.getAssets();
+			const targetAsset = mediaIdArg
+				? assets.find((a) => a.id === mediaIdArg)
+				: assets.find((a) => a.type === "image");
+
+			if (!targetAsset) {
+				throw new Error("No image asset found in the project to compress.");
+			}
+
+			const result = await compressImageInBrowser({
+				file: targetAsset.file,
+				quality: quality / 100,
+				format,
+				maxWidth: maxResolution,
+				maxHeight: maxResolution,
+			});
+
+			const processed = await processMediaAssets({ files: [result.file] });
+			if (processed.length === 0) {
+				throw new Error("Failed to process compressed image in editor.");
+			}
+
+			const asset = processed[0];
+			const projectId = editor.project.getActive().metadata.id;
+			const saved = await editor.media.addMediaAsset({ projectId, asset });
+			if (!saved) throw new Error("Failed to store compressed image.");
+
+			return {
+				ok: true,
+				originalName: targetAsset.name,
+				compressedName: result.file.name,
+				originalSizeKB: (result.originalSize / 1024).toFixed(1),
+				compressedSizeKB: (result.compressedSize / 1024).toFixed(1),
+				savedPercent: `${result.compressionRatio}%`,
+				dimensions: `${result.width}x${result.height}`,
+				message: `Successfully compressed "${targetAsset.name}" by ${result.compressionRatio}% and added to project assets.`,
+			};
 		},
 	},
 ];

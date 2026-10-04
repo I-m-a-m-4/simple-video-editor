@@ -353,7 +353,7 @@ export function ProUpgradeModal() {
 										</div>
 										<div className="text-left">
 											<div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-												<span>{user?.name || "Bello Imam (Admin)"}</span>
+												<span>{user?.name || "Admin User"}</span>
 												<Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] py-0 px-1 font-semibold">
 													Admin • 100% Free
 												</Badge>

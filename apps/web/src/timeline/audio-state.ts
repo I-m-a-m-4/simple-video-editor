@@ -18,6 +18,7 @@ export function clampDb(value: number): number {
 }
 
 export function dBToLinear(db: number): number {
+	if (db <= VOLUME_DB_MIN) return 0;
 	return 10 ** (clampDb(db) / 20);
 }
 
@@ -35,6 +36,9 @@ export function isElementMuted({
 }: {
 	element: AudioCapableElement;
 }): boolean {
+	if (element.type === "video" && element.isSourceAudioEnabled === false) {
+		return true;
+	}
 	return element.params.muted === true;
 }
 

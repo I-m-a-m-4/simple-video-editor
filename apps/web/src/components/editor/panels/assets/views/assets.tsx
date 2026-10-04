@@ -48,6 +48,8 @@ import {
 import { MASKABLE_ELEMENT_TYPES } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
 import { cn } from "@/utils/ui";
+import { UrlImportModal } from "@/components/media-grabber/url-import-modal";
+import { MediaCompressorModal } from "@/components/compressor/media-compressor-modal";
 import {
 	CloudUploadIcon,
 	GridViewIcon,
@@ -56,8 +58,10 @@ import {
 	Image02Icon,
 	MusicNote03Icon,
 	Video01Icon,
+	Link01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { Minimize2 } from "lucide-react";
 
 export function MediaView() {
 	const editor = useEditor();
@@ -76,6 +80,9 @@ export function MediaView() {
 
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [progress, setProgress] = useState(0);
+	const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
+	const [isCompressorModalOpen, setIsCompressorModalOpen] = useState(false);
+	const [compressorTab, setCompressorTab] = useState<"video" | "image">("video");
 
 	const processFiles = async ({ files }: { files: File[] }) => {
 		if (!files || files.length === 0) return;
@@ -202,6 +209,11 @@ export function MediaView() {
 						sortOrder={mediaSortOrder}
 						onSort={handleSort}
 						onImport={openFilePicker}
+						onImportUrl={() => setIsUrlModalOpen(true)}
+						onCompress={(tab) => {
+							setCompressorTab(tab);
+							setIsCompressorModalOpen(true);
+						}}
 					/>
 				}
 				className={cn(isDragOver && "bg-accent/30")}
@@ -231,6 +243,15 @@ export function MediaView() {
 					</SelectableSurface>
 				)}
 			</PanelView>
+			<UrlImportModal
+				isOpen={isUrlModalOpen}
+				onOpenChange={setIsUrlModalOpen}
+			/>
+			<MediaCompressorModal
+				isOpen={isCompressorModalOpen}
+				onOpenChange={setIsCompressorModalOpen}
+				defaultTab={compressorTab}
+			/>
 		</>
 	);
 }
@@ -513,6 +534,8 @@ function MediaActions({
 	sortOrder,
 	onSort,
 	onImport,
+	onImportUrl,
+	onCompress,
 }: {
 	mediaViewMode: MediaViewMode;
 	setMediaViewMode: (mode: MediaViewMode) => void;
@@ -521,9 +544,11 @@ function MediaActions({
 	sortOrder: MediaSortOrder;
 	onSort: ({ key }: { key: MediaSortKey }) => void;
 	onImport: () => void;
+	onImportUrl: () => void;
+	onCompress: (tab: "video" | "image") => void;
 }) {
 	return (
-		<div className="flex gap-1.5">
+		<div className="flex gap-1.5 items-center">
 			<TooltipProvider>
 				<Tooltip>
 					<TooltipTrigger asChild>
@@ -606,12 +631,32 @@ function MediaActions({
 			</TooltipProvider>
 			<Button
 				variant="outline"
+				onClick={() => onCompress("video")}
+				disabled={isProcessing}
+				size="sm"
+				className="items-center justify-center gap-1.5 border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 text-xs"
+			>
+				<Minimize2 className="size-3.5 text-blue-500" />
+				Compress
+			</Button>
+			<Button
+				variant="outline"
+				onClick={onImportUrl}
+				disabled={isProcessing}
+				size="sm"
+				className="items-center justify-center gap-1.5 border-orange-500/40 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 text-xs"
+			>
+				<HugeiconsIcon icon={Link01Icon} className="size-3.5 text-orange-500" />
+				Paste Link
+			</Button>
+			<Button
+				variant="outline"
 				onClick={onImport}
 				disabled={isProcessing}
 				size="sm"
-				className="items-center justify-center gap-1.5"
+				className="items-center justify-center gap-1.5 text-xs"
 			>
-				<HugeiconsIcon icon={CloudUploadIcon} />
+				<HugeiconsIcon icon={CloudUploadIcon} className="size-3.5" />
 				Import
 			</Button>
 		</div>

@@ -202,7 +202,7 @@ export function Header() {
 											</div>
 										</div>
 
-										{/* Admin Portal link for belloimam431@gmail.com */}
+										{/* Admin Portal link */}
 										{isAdmin && (
 											<Link href="/admin">
 												<DropdownMenuItem className="text-xs font-semibold text-orange-600 dark:text-orange-400 focus:bg-orange-500/10 cursor-pointer flex items-center gap-2">

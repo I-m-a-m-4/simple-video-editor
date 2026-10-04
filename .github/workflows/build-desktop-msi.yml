@@ -81,7 +81,7 @@ jobs:
           FREESOUND_CLIENT_ID: "dummy_id"
           FREESOUND_API_KEY: "dummy_key"
         run: |
-          npx @tauri-apps/cli build --bundles msi,nsis --no-before-build-command
+          npx @tauri-apps/cli build --bundles msi,nsis --config '{"build":{"beforeBuildCommand":""}}'
 
       - name: Upload Windows MSI & Setup Artifacts
         if: always()

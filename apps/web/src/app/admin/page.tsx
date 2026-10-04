@@ -614,7 +614,7 @@ export default function AdminPage() {
 								<label className="text-xs font-semibold text-foreground">Full Name</label>
 								<Input
 									type="text"
-									placeholder="e.g. Bello Imam"
+									placeholder="e.g. Admin User"
 									value={name}
 									onChange={(e) => setName(e.target.value)}
 									required

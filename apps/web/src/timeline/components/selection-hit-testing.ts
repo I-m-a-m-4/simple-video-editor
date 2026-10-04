@@ -1,5 +1,6 @@
 import type { TimelineTrack } from "@/timeline";
 import { timelineTimeToPixels } from "@/timeline/pixel-utils";
+import { MIN_TIMELINE_ELEMENT_WIDTH_PX } from "@/timeline/scale";
 import {
 	TIMELINE_CONTENT_TOP_PADDING_PX,
 } from "./layout";
@@ -109,7 +110,8 @@ export function resolveTimelineElementIntersections({
 
 		for (const element of track.elements) {
 			const elementLeft = timelineTimeToPixels({ time: element.startTime, zoomLevel });
-			const elementRight = timelineTimeToPixels({ time: element.startTime + element.duration, zoomLevel });
+			const naturalRight = timelineTimeToPixels({ time: element.startTime + element.duration, zoomLevel });
+			const elementRight = Math.max(naturalRight, elementLeft + MIN_TIMELINE_ELEMENT_WIDTH_PX);
 			const elementRectangle = {
 				left: elementLeft,
 				top: elementTop,

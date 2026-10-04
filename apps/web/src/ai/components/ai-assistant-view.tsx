@@ -367,7 +367,7 @@ export function AiAssistantView() {
 					</div>
 					<div className="flex justify-between items-center px-1 text-[10px] text-muted-foreground">
 						<span>Press Enter to send, Shift+Enter for new line</span>
-						<span className="font-mono">{model.replace("llama-", "").replace("-versatile", "")}</span>
+						<span className="font-mono text-amber-500 font-medium">Amber AI</span>
 					</div>
 				</div>
 					</>

@@ -19,6 +19,7 @@ import {
 	canElementBeHidden,
 	hasElementEffects,
 	hasMediaId,
+	MIN_TIMELINE_ELEMENT_WIDTH_PX,
 	timelineTimeToPixels,
 	timelineTimeToSnappedPixels,
 } from "@/timeline";
@@ -272,6 +273,10 @@ export function TimelineElement({
 		time: displayedDuration,
 		zoomLevel,
 	});
+	const visualElementWidth = Math.max(
+		elementWidth,
+		MIN_TIMELINE_ELEMENT_WIDTH_PX,
+	);
 	const timelinePixelsPerSecond = getTimelinePixelsPerSecond({ zoomLevel });
 	const elementLeft = timelineTimeToSnappedPixels({
 		time: displayedStartTime,
@@ -380,11 +385,12 @@ export function TimelineElement({
 						className="absolute top-0 select-none"
 						style={{
 							left: `${elementLeft}px`,
-							width: `${elementWidth}px`,
+							width: `${visualElementWidth}px`,
 							height:
 								expandedRows.length > 0
 									? `${baseTrackHeight + expansionHeight}px`
 									: "100%",
+							zIndex: isBeingDragged ? 30 : isSelected ? 20 : 1,
 							transform:
 								isDragging && isBeingDragged
 									? `translate3d(0, ${dragOffsetY}px, 0)`
@@ -644,7 +650,7 @@ function ResizeHandle({
 		<button
 			type="button"
 			className={cn(
-				"absolute top-0 bottom-0 w-2",
+				"absolute top-0 bottom-0 w-2.5 z-20",
 				isLeft ? "-left-1 cursor-w-resize" : "-right-1 cursor-e-resize",
 			)}
 			onMouseDown={(event) => onResizeStart({ event, element, track, side })}

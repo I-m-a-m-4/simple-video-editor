@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  
+  <defs>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="40%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#orangeGrad)"/>
+
+  <!-- Clapperboard slate -->
+  <rect x="110" y="216" width="292" height="184" rx="18" fill="white" opacity="0.92"/>
+  <!-- Clapperboard top arm -->
+  <path d="M110,216 L110,174 C110,164 118,156 128,156 L384,156 C394,156 402,164 402,174 L402,216 Z" fill="white" opacity="0.75"/>
+  <!-- Angled stripes on top arm -->
+  <line x1="152" y1="156" x2="182" y2="216" stroke="#EF4444" stroke-width="9" stroke-linecap="round"/>
+  <line x1="212" y1="156" x2="242" y2="216" stroke="#EF4444" stroke-width="9" stroke-linecap="round"/>
+  <line x1="272" y1="156" x2="302" y2="216" stroke="#EF4444" stroke-width="9" stroke-linecap="round"/>
+  <line x1="332" y1="156" x2="362" y2="216" stroke="#EF4444" stroke-width="9" stroke-linecap="round"/>
+  <!-- Center play mark in slate -->
+  <polygon points="236,276 236,344 288,310" fill="#EF4444" opacity="0.85"/>
+</svg>

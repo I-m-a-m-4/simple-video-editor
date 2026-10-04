@@ -4,7 +4,10 @@
   "private": true,
   "packageManager": "bun@1.2.18",
   "scripts": {
-    "dev": "next dev --turbopack",
+    "clean:dev": "node -e \"try{fs.rmSync('.next',{recursive:true,force:true})}catch(e){}\"",
+    "predev": "bun run clean:dev",
+    "dev": "node -e \"try{fs.rmSync('.next',{recursive:true,force:true})}catch(e){}\" && next dev --turbopack",
+    "dev:webpack": "next dev",
     "build": "next build",
     "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  
+  <defs>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="40%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#orangeGrad)"/>
+
+  <!-- Viewport frame border -->
+  <rect x="106" y="106" width="300" height="300" rx="36" fill="none" stroke="white" stroke-width="10" opacity="0.35"/>
+  <!-- Corner marks -->
+  <path d="M136,166 L136,136 L166,136" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  <path d="M346,136 L376,136 L376,166" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  <path d="M136,346 L136,376 L166,376" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  <path d="M346,376 L376,376 L376,346" fill="none" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  <!-- Inner smooth play symbol -->
+  <path d="M224,184 C224,176 234,172 240,177 L332,242 C338,246 338,266 332,270 L240,335 C234,340 224,336 224,328 Z" fill="white" opacity="0.95"/>
+</svg>
