@@ -6,9 +6,20 @@ import {
 	getTempDirectory,
 } from "@/services/media-grabber/video-processor";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
+
+export async function GET() {
+	return NextResponse.json({ ok: true });
+}
 
 export async function POST(request: Request) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json(
+			{ error: "Not available in desktop" },
+			{ status: 400 },
+		);
+	}
+
 	let sessionDir: string | null = null;
 	try {
 		const formData = await request.formData();

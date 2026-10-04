@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
 
 export async function GET(request: Request) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({ success: true, results: [] });
+	}
+
 	try {
 		const { searchParams } = new URL(request.url);
 		const query = searchParams.get("query");
@@ -11,7 +15,7 @@ export async function GET(request: Request) {
 		if (!query) {
 			return NextResponse.json(
 				{ error: "Query parameter is required" },
-				{ status: 400 },
+				{ status: 200 },
 			);
 		}
 

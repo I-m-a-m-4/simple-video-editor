@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { getVideoInfo } from "@/services/media-grabber/video-processor";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
 
 export async function GET(request: Request) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({ ok: true });
+	}
+
 	try {
 		const { searchParams } = new URL(request.url);
 		const url = searchParams.get("url");
@@ -11,7 +15,7 @@ export async function GET(request: Request) {
 		if (!url) {
 			return NextResponse.json(
 				{ error: "URL query parameter is required" },
-				{ status: 400 },
+				{ status: 200 },
 			);
 		}
 
