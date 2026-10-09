@@ -39,8 +39,16 @@ import { cn } from "@/utils/ui";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+const MODEL_LABELS: Record<string, string> = {
+	"llama-3.3-70b-versatile": "Amber 70B Fast (Recommended)",
+	"llama-3.1-8b-instant": "Amber 8B Instant (Ultra Fast)",
+	"llama3-70b-8192": "Amber 70B High Precision",
+	"llama3-8b-8192": "Amber 8B Fast",
+	"mixtral-8x7b-32768": "Amber MoE Context",
+};
+
 const QUICK_ACTIONS = [
-	{ label: "🚀 TypeSafe / Jev Launch Video", prompt: "Create a complete animated launch video for TypeSafe announcing Jev, our first System One model." },
+	{ label: "⚡ Intro Launch Video", prompt: "Create a complete animated launch teaser video announcement for our product." },
 	{ label: "Scan Timeline", prompt: "Inspect the timeline and summarize all clips, text, and tracks." },
 	{ label: "Clean & Denoise Audio", prompt: "Enhance the audio quality and remove background noise for the clips on the timeline." },
 	{ label: "Split at Playhead", prompt: "Split the clip at the current playhead position." },
@@ -61,7 +69,6 @@ export function AiAssistantView() {
 		clearMessages,
 	} = useAiStore();
 
-	const [activeTab, setActiveTab] = useState<"chat" | "launch">("chat");
 	const [input, setInput] = useState("");
 	const [showSettings, setShowSettings] = useState(!apiKey);
 	const [apiKeyDraft, setApiKeyDraft] = useState(apiKey);
@@ -109,7 +116,7 @@ export function AiAssistantView() {
 
 	return (
 		<PanelView
-			title="AI Assistant (Groq)"
+			title="Amber AI Assistant"
 			actions={
 				<div className="flex items-center gap-1">
 					<Tooltip>
@@ -123,7 +130,7 @@ export function AiAssistantView() {
 								<Key className={cn("size-3.5", apiKey && "text-primary")} />
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent side="bottom">API Key & Settings</TooltipContent>
+						<TooltipContent side="bottom">Amber AI Settings</TooltipContent>
 					</Tooltip>
 
 					<Tooltip>
@@ -150,25 +157,18 @@ export function AiAssistantView() {
 					<div className="bg-muted/40 border-b p-3 space-y-3 shrink-0 animate-in fade-in slide-in-from-top-2 duration-200">
 						<div className="flex items-center justify-between">
 							<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-								<Sparkles className="size-3 text-primary" /> Groq Configuration
+								<Sparkles className="size-3 text-primary" /> Amber AI Configuration
 							</span>
-							<a
-								href="https://console.groq.com/keys"
-								target="_blank"
-								rel="noreferrer"
-								className="text-[11px] text-primary hover:underline flex items-center gap-1"
-							>
-								Get free key <ExternalLink className="size-2.5" />
-							</a>
+							<span className="text-[11px] text-muted-foreground">Neural Copilot</span>
 						</div>
 
 						<div className="space-y-1.5">
-							<label className="text-[11px] text-muted-foreground block">Groq API Key</label>
+							<label className="text-[11px] text-muted-foreground block">Amber AI Key</label>
 							<div className="flex gap-1.5">
 								<div className="relative flex-1">
 									<Input
 										type={showKeyText ? "text" : "password"}
-										placeholder="gsk_..."
+										placeholder="sk-amber-ai..."
 										value={apiKeyDraft}
 										onChange={(e) => setApiKeyDraft(e.target.value)}
 										className="h-8 text-xs font-mono pr-8"
@@ -188,15 +188,15 @@ export function AiAssistantView() {
 						</div>
 
 						<div className="space-y-1.5">
-							<label className="text-[11px] text-muted-foreground block">Model</label>
+							<label className="text-[11px] text-muted-foreground block">Model Engine</label>
 							<Select value={model} onValueChange={setModel}>
 								<SelectTrigger className="h-8 text-xs">
 									<SelectValue placeholder="Select model" />
 								</SelectTrigger>
 								<SelectContent>
 									{GROQ_MODELS.map((m) => (
-										<SelectItem key={m} value={m} className="text-xs font-mono">
-											{m}
+										<SelectItem key={m} value={m} className="text-xs">
+											{MODEL_LABELS[m] || m}
 										</SelectItem>
 									))}
 								</SelectContent>
@@ -205,43 +205,9 @@ export function AiAssistantView() {
 					</div>
 				)}
 
-				{/* Mode Switcher Tabs */}
-				<div className="flex border-b border-border bg-muted/20 px-3 py-1.5 gap-1 shrink-0">
-					<button
-						type="button"
-						onClick={() => setActiveTab("chat")}
-						className={cn(
-							"flex-1 text-xs py-1 px-2.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1.5",
-							activeTab === "chat"
-								? "bg-background text-foreground shadow-xs font-semibold"
-								: "text-muted-foreground hover:text-foreground",
-						)}
-					>
-						<Bot className="size-3.5" />
-						Chat Copilot
-					</button>
-					<button
-						type="button"
-						onClick={() => setActiveTab("launch")}
-						className={cn(
-							"flex-1 text-xs py-1 px-2.5 rounded-md font-medium transition-colors flex items-center justify-center gap-1.5",
-							activeTab === "launch"
-								? "bg-amber-500/20 text-amber-400 font-semibold shadow-xs border border-amber-500/30"
-								: "text-muted-foreground hover:text-foreground",
-						)}
-					>
-						<Rocket className="size-3.5 text-amber-400" />
-						Launch Video Studio
-					</button>
-				</div>
-
-				{activeTab === "launch" ? (
-					<div className="flex-1 overflow-hidden">
-						<LaunchVideoStudio />
-					</div>
-				) : (
-					<>
-						{/* Quick Action Chips */}
+				{/* Chat Copilot Main View */}
+				<div className="flex-1 flex flex-col min-h-0">
+					{/* Quick Action Chips */}
 						<div className="p-2 border-b bg-muted/15 flex gap-1.5 overflow-x-auto scrollbar-hidden shrink-0">
 					{QUICK_ACTIONS.map((action) => (
 						<button
@@ -265,7 +231,7 @@ export function AiAssistantView() {
 							<div className="space-y-1">
 								<h3 className="text-sm font-medium text-foreground">Agentic Video Copilot</h3>
 								<p className="text-xs max-w-xs text-muted-foreground">
-									Powered by Groq's high-speed inference. Ask me to split clips, insert media, add titles, adjust speeds, or inspect your timeline.
+									Powered by Amber AI&apos;s high-speed neural intelligence. Ask me to split clips, insert media, add titles, adjust speeds, or inspect your timeline.
 								</p>
 							</div>
 						</div>
@@ -370,9 +336,8 @@ export function AiAssistantView() {
 						<span className="font-mono text-amber-500 font-medium">Amber AI</span>
 					</div>
 				</div>
-					</>
-				)}
 			</div>
+		</div>
 		</PanelView>
 	);
 }

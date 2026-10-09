@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
 	Dialog,
 	DialogContent,
 	DialogHeader,
 	DialogTitle,
+	DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,9 @@ import {
 	SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Minimize2, Maximize2, X, Minus } from "lucide-react";
 import Image from "next/image";
+import { Progress } from "@/components/ui/progress";
 
 interface UrlImportModalProps {
 	isOpen: boolean;
@@ -39,7 +42,14 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 	const [url, setUrl] = useState("");
 	const [isLoadingInfo, setIsLoadingInfo] = useState(false);
 	const [isDownloading, setIsDownloading] = useState(false);
+	const [isMinimized, setIsMinimized] = useState(false);
 	const [progressStep, setProgressStep] = useState<string>("");
+	const [downloadPercent, setDownloadPercent] = useState<number>(0);
+	const [downloadSpeed, setDownloadSpeed] = useState<string>("");
+	const [downloadEta, setDownloadEta] = useState<string>("");
+
+	const abortControllerRef = useRef<AbortController | null>(null);
+	const currentDownloadIdRef = useRef<string | null>(null);
 
 	const [videoInfo, setVideoInfo] = useState<{
 		title: string;
@@ -82,6 +92,55 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 		}
 	};
 
+	const fetchProgress = useCallback(async (id: string) => {
+		try {
+			const res = await fetch(`/api/media/grab/progress?id=${id}`);
+			if (!res.ok) return;
+			const data = await res.json();
+			if (data?.progress) {
+				if (typeof data.progress.percent === "number") {
+					setDownloadPercent((prev) => Math.max(prev, data.progress.percent));
+				}
+				if (data.progress.speed) {
+					setDownloadSpeed(data.progress.speed);
+				}
+				if (data.progress.eta) {
+					setDownloadEta(data.progress.eta);
+				}
+				if (data.progress.message) {
+					setProgressStep(data.progress.message);
+				}
+			}
+		} catch {}
+	}, []);
+
+	// Keep progress alive and catch up immediately when returning to tab
+	useEffect(() => {
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible" && isDownloading && currentDownloadIdRef.current) {
+				fetchProgress(currentDownloadIdRef.current);
+			}
+		};
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => {
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
+	}, [isDownloading, fetchProgress]);
+
+	const handleCancelDownload = () => {
+		if (abortControllerRef.current) {
+			abortControllerRef.current.abort();
+			abortControllerRef.current = null;
+		}
+		setIsDownloading(false);
+		setIsMinimized(false);
+		setProgressStep("");
+		setDownloadPercent(0);
+		setDownloadSpeed("");
+		setDownloadEta("");
+		toast.info("Download cancelled.");
+	};
+
 	const handleDownload = async () => {
 		if (!url.trim()) {
 			toast.error("Please enter a video URL.");
@@ -89,18 +148,34 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 		}
 
 		setIsDownloading(true);
+		setDownloadPercent(0);
+		setDownloadSpeed("");
+		setDownloadEta("");
 		setProgressStep(
 			convertToShort
 				? "Downloading video & converting to 9:16 vertical short..."
-				: "Downloading media stream...",
+				: "Connecting to media stream...",
 		);
 
+		const downloadId = `grab_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+		currentDownloadIdRef.current = downloadId;
+		const controller = new AbortController();
+		abortControllerRef.current = controller;
+		let pollInterval: any = null;
+
 		try {
+			// Poll real-time progress every 400ms
+			pollInterval = setInterval(() => {
+				fetchProgress(downloadId);
+			}, 400);
+
 			const response = await fetch("/api/media/grab", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
+				signal: controller.signal,
 				body: JSON.stringify({
 					url: url.trim(),
+					downloadId,
 					convertToShort,
 					startTime: convertToShort ? startTime : undefined,
 					duration: convertToShort ? durationSec : undefined,
@@ -113,6 +188,7 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 				throw new Error(errorJson.error || `Download failed (${response.status})`);
 			}
 
+			setDownloadPercent(100);
 			setProgressStep("Ingesting into project assets...");
 
 			const blob = await response.blob();
@@ -163,20 +239,57 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 			);
 
 			onOpenChange(false);
+			setIsMinimized(false);
 			setUrl("");
 			setVideoInfo(null);
 		} catch (err: any) {
+			if (err.name === "AbortError") {
+				return;
+			}
 			console.error(err);
 			toast.error(err.message || "Failed to download media.");
 		} finally {
+			if (pollInterval) {
+				clearInterval(pollInterval);
+			}
+			currentDownloadIdRef.current = null;
+			abortControllerRef.current = null;
 			setIsDownloading(false);
 			setProgressStep("");
+			setDownloadPercent(0);
+			setDownloadSpeed("");
+			setDownloadEta("");
 		}
 	};
 
 	return (
-		<Dialog open={isOpen} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
+		<>
+			<Dialog
+				open={isOpen && !isMinimized}
+				onOpenChange={(open) => {
+					if (!open && isDownloading) {
+						setIsMinimized(true);
+						toast.info("Downloading in background. Click the bottom widget anytime to expand.");
+						return;
+					}
+					onOpenChange(open);
+				}}
+			>
+				<DialogContent className="max-w-xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
+					{isDownloading && (
+						<button
+							type="button"
+							onClick={() => {
+								setIsMinimized(true);
+								toast.info("Downloading in background. You can continue editing your project!");
+							}}
+							className="absolute top-5 right-14 cursor-pointer text-muted-foreground opacity-70 hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-muted"
+							title="Minimize to background"
+						>
+							<Minus className="size-4" />
+							<span className="sr-only">Minimize</span>
+						</button>
+					)}
 				<DialogHeader className="px-5 py-4 border-b border-border bg-muted/20">
 					<div className="flex items-center gap-2.5">
 						<div className="size-8 rounded-lg bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
@@ -189,9 +302,9 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 									HD / 4K Ready
 								</Badge>
 							</DialogTitle>
-							<p className="text-xs text-muted-foreground mt-0.5">
+							<DialogDescription className="text-xs text-muted-foreground mt-0.5">
 								Paste any link from YouTube, TikTok, Instagram, Twitter/X, or direct MP4.
-							</p>
+							</DialogDescription>
 						</div>
 					</div>
 				</DialogHeader>
@@ -346,36 +459,162 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 						</Label>
 					</div>
 
-					{/* Status feedback */}
+					{/* Real-time Progress feedback */}
 					{isDownloading && (
-						<div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-600 dark:text-orange-400 text-xs flex items-center gap-2.5 animate-pulse">
-							<HugeiconsIcon icon={Download01Icon} className="size-4 shrink-0 animate-bounce" />
-							<span>{progressStep}</span>
+						<div className="p-4 rounded-xl bg-gradient-to-b from-orange-500/10 to-orange-500/5 border border-orange-500/30 space-y-2.5">
+							<div className="flex items-center justify-between text-xs">
+								<div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 font-medium">
+									<HugeiconsIcon icon={Download01Icon} className="size-4 shrink-0 animate-bounce" />
+									<span className="truncate max-w-[320px]">{progressStep || "Downloading media stream..."}</span>
+								</div>
+								<span className="font-bold text-orange-600 dark:text-orange-400 tabular-nums text-xs">
+									{downloadPercent > 0 ? `${downloadPercent.toFixed(0)}%` : "0%"}
+								</span>
+							</div>
+
+							<Progress
+								value={downloadPercent}
+								className="h-2 bg-orange-500/20"
+							/>
+
+							<div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+								{downloadSpeed ? (
+									<span>Speed: <strong className="text-foreground font-medium">{downloadSpeed}</strong></span>
+								) : (
+									<span>Downloading stream...</span>
+								)}
+								{downloadEta && (
+									<span>ETA: <strong className="text-foreground font-medium">{downloadEta}</strong></span>
+								)}
+							</div>
+
+							<div className="flex items-center justify-between pt-1 border-t border-orange-500/15">
+								<span className="text-[11px] text-muted-foreground">
+									Can take several minutes on high resolution
+								</span>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									className="h-6 text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 hover:bg-orange-500/10 px-2 gap-1 font-medium"
+									onClick={() => {
+										setIsMinimized(true);
+										toast.info("Downloading in background. You can continue editing your project!");
+									}}
+								>
+									<Minimize2 className="size-3" />
+									Minimize & edit video
+								</Button>
+							</div>
 						</div>
 					)}
 				</div>
 
 				<div className="px-5 py-3 border-t border-border bg-muted/20 flex justify-end gap-2">
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => onOpenChange(false)}
-						disabled={isDownloading}
-					>
-						Cancel
-					</Button>
-					<Button
-						variant="default"
-						size="sm"
-						onClick={handleDownload}
-						disabled={!url.trim() || isDownloading}
-						className="gap-1.5 bg-orange-500 hover:bg-orange-600 text-white"
-					>
-						<HugeiconsIcon icon={Download01Icon} className="size-4" />
-						{isDownloading ? "Processing..." : convertToShort ? "Grab & Convert to Short" : "Grab & Import"}
-					</Button>
+					{isDownloading ? (
+						<>
+							<Button
+								variant="secondary"
+								size="sm"
+								onClick={() => {
+									setIsMinimized(true);
+									toast.info("Downloading in background. You can continue editing your project!");
+								}}
+								className="gap-1.5"
+							>
+								<Minimize2 className="size-3.5" />
+								Minimize to Background
+							</Button>
+							<Button
+								variant="destructive"
+								size="sm"
+								onClick={handleCancelDownload}
+								className="gap-1.5"
+							>
+								Cancel Download
+							</Button>
+						</>
+					) : (
+						<>
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onOpenChange(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								variant="default"
+								size="sm"
+								onClick={handleDownload}
+								disabled={!url.trim()}
+								className="gap-1.5 bg-orange-500 hover:bg-orange-600 text-white"
+							>
+								<HugeiconsIcon icon={Download01Icon} className="size-4" />
+								{convertToShort ? "Grab & Convert to Short" : "Grab & Import"}
+							</Button>
+						</>
+					)}
 				</div>
 			</DialogContent>
 		</Dialog>
+
+		{/* Floating Minimized Widget */}
+		{isDownloading && isMinimized && (
+			<div
+				className="fixed bottom-6 right-6 z-250 bg-card/95 backdrop-blur-md border border-orange-500/40 rounded-2xl shadow-2xl p-3.5 w-84 max-w-[calc(100vw-3rem)] text-foreground flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 transition-all"
+				role="status"
+				aria-live="polite"
+			>
+				<div
+					className="size-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-500 shrink-0 cursor-pointer"
+					onClick={() => setIsMinimized(false)}
+					title="Click to expand"
+				>
+					<HugeiconsIcon icon={Download01Icon} className="size-4 animate-bounce" />
+				</div>
+				<div
+					className="flex-1 min-w-0 cursor-pointer"
+					onClick={() => setIsMinimized(false)}
+					title="Click to expand"
+				>
+					<div className="flex items-center justify-between text-xs mb-1">
+						<span className="font-semibold truncate max-w-[150px]">
+							{videoInfo?.title || "Downloading video..."}
+						</span>
+						<span className="font-bold text-orange-500 tabular-nums">
+							{downloadPercent > 0 ? `${downloadPercent.toFixed(0)}%` : "0%"}
+						</span>
+					</div>
+					<Progress value={downloadPercent} className="h-1.5 bg-orange-500/20 [&>div]:bg-orange-500" />
+					<div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+						<span>{downloadSpeed || "Downloading..."}</span>
+						{downloadEta && <span>ETA {downloadEta}</span>}
+					</div>
+				</div>
+				<div className="flex items-center gap-1 shrink-0">
+					<Button
+						variant="ghost"
+						size="icon"
+						className="size-7 rounded-lg text-muted-foreground hover:text-foreground"
+						onClick={() => setIsMinimized(false)}
+						title="Restore to full view"
+					>
+						<Maximize2 className="size-3.5" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="size-7 rounded-lg text-muted-foreground hover:text-destructive"
+						onClick={handleCancelDownload}
+						title="Cancel download"
+					>
+						<X className="size-3.5" />
+					</Button>
+				</div>
+			</div>
+		)}
+	</>
 	);
 }
+

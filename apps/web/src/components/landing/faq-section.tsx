@@ -12,14 +12,14 @@ import { HelpCircle } from "lucide-react";
 export function FaqSection() {
 	const faqs = [
 		{
-			question: "How does the Groq Agentic AI edit my video timeline?",
+			question: "How does the Amber AI Agent edit my video timeline?",
 			answer:
-				"The AI copilot uses Groq's high-speed LPU infrastructure running models like Llama 3.3 70B Versatile and Llama 3.1 8B Instant. It connects directly to EditorCore via 21 specialized function-calling tools. When you ask it to split clips, adjust volume, add text overlays, or attach GPU effects, it inspects the project state, executes the programmatic commands on the timeline, verifies the result, and reports back — all while keeping the video canvas live.",
+				"The AI copilot uses Amber AI's high-speed neural intelligence infrastructure. It connects directly to EditorCore via 21 specialized function-calling tools. When you ask it to split clips, adjust volume, add text overlays, or attach GPU effects, it inspects the project state, executes the programmatic commands on the timeline, verifies the result, and reports back — all while keeping the video canvas live.",
 		},
 		{
-			question: "Do I need a Groq API key to use the AI?",
+			question: "Do I need an API key to use Amber AI?",
 			answer:
-				"A working default Groq API key is already configured for instant testing out of the box! You can also provide your own personal Groq API key (available for free at console.groq.com) directly in the AI Assistant settings drawer in the editor. Your key is stored locally in your browser and never leaves your machine.",
+				"A working default Amber AI configuration is already active for instant testing out of the box! You can also provide your own personal AI key directly in the AI Assistant settings drawer in the editor. Your key is stored locally in your browser and never leaves your machine.",
 		},
 		{
 			question: "Can I run this in my browser using 'npm run dev'?",
@@ -34,7 +34,7 @@ export function FaqSection() {
 		{
 			question: "Is my video uploaded to the cloud or private?",
 			answer:
-				"All video processing, frame rendering, audio decoding, and project timeline storage occurs 100% locally on your machine using WebAssembly and IndexedDB. Only your text prompts and timeline metadata (clip timestamps and parameters) are sent to Groq for tool execution. Your heavy media files never leave your device.",
+				"All video processing, frame rendering, audio decoding, and project timeline storage occurs 100% locally on your machine using WebAssembly and IndexedDB. Only your text prompts and timeline metadata (clip timestamps and parameters) are sent to Amber AI for tool execution. Your heavy media files never leave your device.",
 		},
 	];
 

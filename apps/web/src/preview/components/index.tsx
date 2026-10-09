@@ -23,6 +23,7 @@ import {
 	PreviewViewportProvider,
 	usePreviewViewportState,
 } from "./preview-viewport";
+import { computeElementCssFilter } from "@/preview/preview-filters";
 
 function usePreviewSize() {
 	const canvasSize = useEditor(
@@ -146,6 +147,22 @@ function PreviewCanvas({
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
+	const activeScene = useEditor((e) => e.scenes.getActiveSceneOrNull());
+	const currentTime = useEditor((e) => e.playback.getCurrentTime());
+
+	const activeCssFilter = useMemo(() => {
+		if (!activeScene) return "none";
+		const mainElements = activeScene.tracks.main?.elements ?? [];
+		const currentEl =
+			mainElements.find(
+				(el) =>
+					currentTime >= el.startTime &&
+					currentTime <= el.startTime + el.duration,
+			) ?? mainElements[0];
+
+		return computeElementCssFilter(currentEl?.params);
+	}, [activeScene, currentTime]);
+
 	const renderTree = useEditor((e) => e.renderer.getRenderTree());
 	const viewport = usePreviewViewportState({
 		canvasHeight: nativeHeight,
@@ -316,6 +333,8 @@ function PreviewCanvas({
 									top: viewport.sceneTop,
 									width: viewport.sceneWidth,
 									height: viewport.sceneHeight,
+									filter: activeCssFilter,
+									transition: "filter 0.2s ease-out",
 									background:
 										activeProject.settings.background.type === "blur"
 											? "transparent"

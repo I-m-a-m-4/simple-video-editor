@@ -35,6 +35,7 @@ interface MediaCompressorModalProps {
 	isOpen: boolean;
 	onOpenChange: (open: boolean) => void;
 	defaultTab?: "video" | "image";
+	initialFile?: File | null;
 }
 
 function formatBytes(bytes: number): string {
@@ -49,15 +50,29 @@ export function MediaCompressorModal({
 	isOpen,
 	onOpenChange,
 	defaultTab = "video",
+	initialFile = null,
 }: MediaCompressorModalProps) {
 	const editor = useEditor();
 	const [activeTab, setActiveTab] = useState<"video" | "image">(defaultTab);
 
 	useEffect(() => {
 		if (isOpen) {
-			setActiveTab(defaultTab);
+			if (initialFile) {
+				if (initialFile.type.startsWith("image/")) {
+					setActiveTab("image");
+					setImageFile(initialFile);
+					setImageResult(null);
+					runImageCompression(initialFile, imageQuality, imageFormat, imageMaxDimension);
+				} else if (initialFile.type.startsWith("video/")) {
+					setActiveTab("video");
+					setVideoFile(initialFile);
+					setVideoResult(null);
+				}
+			} else {
+				setActiveTab(defaultTab);
+			}
 		}
-	}, [isOpen, defaultTab]);
+	}, [isOpen, defaultTab, initialFile]);
 
 	// Video compression state
 	const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -182,6 +197,30 @@ export function MediaCompressorModal({
 		} catch (err: any) {
 			console.error(err);
 			toast.error(err.message || "Failed to add asset to project.");
+		}
+	};
+
+	const handleAddBothToProject = async (origFile: File | null, compFile: File) => {
+		try {
+			const filesToAdd: File[] = [];
+			if (origFile) {
+				filesToAdd.push(origFile);
+			}
+			filesToAdd.push(compFile);
+
+			const processed = await processMediaAssets({ files: filesToAdd });
+			const projectId = editor.project.getActive().metadata.id;
+			for (const asset of processed) {
+				await editor.media.addMediaAsset({ projectId, asset });
+			}
+			toast.success(
+				origFile
+					? "Both original and compressed assets added to media library!"
+					: "Added compressed asset to media library!",
+			);
+		} catch (err: any) {
+			console.error(err);
+			toast.error(err.message || "Failed to add assets to project.");
 		}
 	};
 
@@ -660,20 +699,30 @@ export function MediaCompressorModal({
 												</div>
 											</div>
 
-											<div className="flex gap-2 pt-1">
+											<div className="flex gap-2 pt-1 flex-wrap">
 												<Button
 													size="sm"
-													onClick={() => handleAddToProject(imageResult.file)}
-													className="flex-1 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+													onClick={() => handleAddBothToProject(imageFile, imageResult.file)}
+													className="flex-1 min-w-[170px] text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+													title="Keep original and also add the optimized compressed copy to Assets"
 												>
 													<HugeiconsIcon icon={Layers01Icon} className="size-3.5" />
-													Add to Project Assets
+													Add Both (Original & Compressed)
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onClick={() => handleAddToProject(imageResult.file)}
+													className="text-xs cursor-pointer"
+													title="Add only the compressed version to save project space"
+												>
+													Compressed Only
 												</Button>
 												<Button
 													size="sm"
 													variant="outline"
 													onClick={() => handleDownload(imageResult.file)}
-													className="text-xs gap-1.5"
+													className="text-xs gap-1.5 cursor-pointer"
 												>
 													<HugeiconsIcon icon={Download01Icon} className="size-3.5" />
 													Download

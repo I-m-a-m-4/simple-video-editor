@@ -49,8 +49,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import { OcRippleIcon } from "@/components/icons";
 import { GraphEditorPopover } from "./graph-editor/popover";
-import { PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useGraphEditorController } from "./graph-editor/use-controller";
+import { Info, Keyboard } from "lucide-react";
 
 export function TimelineToolbar({
 	zoomLevel,
@@ -143,22 +144,22 @@ function ToolbarLeftSection() {
 
 	return (
 		<div className="flex items-center gap-1">
-			<TooltipProvider delayDuration={500}>
+			<TooltipProvider delayDuration={100}>
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={ScissorIcon} />}
-					tooltip="Split element"
+					tooltip="Split clip at playhead (S)"
 					onClick={({ event }) => handleAction({ action: "split", event })}
 				/>
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={AlignLeftIcon} />}
-					tooltip="Split left"
+					tooltip="Trim start to playhead (Q)"
 					onClick={({ event }) => handleAction({ action: "split-left", event })}
 				/>
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={AlignRightIcon} />}
-					tooltip="Split right"
+					tooltip="Trim end to playhead (W)"
 					onClick={({ event }) =>
 						handleAction({ action: "split-right", event })
 					}
@@ -170,7 +171,7 @@ function ToolbarLeftSection() {
 							icon={isSelectedSourceAudioSeparated ? Unlink02Icon : Link02Icon}
 						/>
 					}
-					tooltip={sourceAudioLabel}
+					tooltip={`${sourceAudioLabel} (Separate/Link)`}
 					disabled={!canToggleSelectedSourceAudio}
 					onClick={({ event }) =>
 						handleAction({ action: "toggle-source-audio", event })
@@ -179,7 +180,7 @@ function ToolbarLeftSection() {
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Copy01Icon} />}
-					tooltip="Duplicate element"
+					tooltip="Duplicate selected clip (Ctrl+D)"
 					onClick={({ event }) =>
 						handleAction({ action: "duplicate-selected", event })
 					}
@@ -194,7 +195,7 @@ function ToolbarLeftSection() {
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Delete02Icon} />}
-					tooltip="Delete element"
+					tooltip="Delete selected clip (Del / Backspace)"
 					onClick={({ event }) =>
 						handleAction({ action: "delete-selected", event })
 					}
@@ -216,7 +217,7 @@ function ToolbarLeftSection() {
 					<ToolbarButton
 						icon={<HugeiconsIcon icon={Bookmark02Icon} />}
 						isActive={isCurrentlyBookmarked}
-						tooltip={isCurrentlyBookmarked ? "Remove bookmark" : "Add bookmark"}
+						tooltip={isCurrentlyBookmarked ? "Remove bookmark (B)" : "Add bookmark (B)"}
 						onClick={({ event }) =>
 							handleAction({ action: "toggle-bookmark", event })
 						}
@@ -294,18 +295,18 @@ function ToolbarRightSection({
 
 	return (
 		<div className="flex items-center gap-1">
-			<TooltipProvider delayDuration={500}>
+			<TooltipProvider delayDuration={100}>
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={MagnetIcon} />}
 					isActive={snappingEnabled}
-					tooltip="Auto snapping"
+					tooltip="Auto snapping to clips & playhead (M)"
 					onClick={() => toggleSnapping()}
 				/>
 
 				<ToolbarButton
 					icon={<OcRippleIcon size={24} className="scale-110" />}
 					isActive={rippleEditingEnabled}
-					tooltip="Ripple editing"
+					tooltip="Ripple editing (Auto-shift clips on trim)"
 					onClick={() => toggleRippleEditing()}
 				/>
 			</TooltipProvider>
@@ -313,13 +314,13 @@ function ToolbarRightSection({
 			<div className="bg-border mx-1 h-6 w-px" />
 
 			<div className="flex items-center gap-1">
-				<Button
-					variant="text"
-					size="icon"
-					onClick={() => onZoom({ direction: "out" })}
-				>
-					<HugeiconsIcon icon={SearchMinusIcon} />
-				</Button>
+				<TooltipProvider delayDuration={100}>
+					<ToolbarButton
+						icon={<HugeiconsIcon icon={SearchMinusIcon} />}
+						tooltip="Zoom out timeline (Ctrl -)"
+						onClick={() => onZoom({ direction: "out" })}
+					/>
+				</TooltipProvider>
 				<Slider
 					className="w-28"
 					value={[zoomToSlider({ zoomLevel, minZoom })]}
@@ -330,15 +331,128 @@ function ToolbarRightSection({
 					max={1}
 					step={0.005}
 				/>
-				<Button
-					variant="text"
-					size="icon"
-					onClick={() => onZoom({ direction: "in" })}
-				>
-					<HugeiconsIcon icon={SearchAddIcon} />
-				</Button>
+				<TooltipProvider delayDuration={100}>
+					<ToolbarButton
+						icon={<HugeiconsIcon icon={SearchAddIcon} />}
+						tooltip="Zoom in timeline (Ctrl +)"
+						onClick={() => onZoom({ direction: "in" })}
+					/>
+				</TooltipProvider>
 			</div>
+
+			<div className="bg-border mx-1 h-6 w-px" />
+
+			{/* Timeline Keyboard Shortcuts Quick Info Popover */}
+			<ToolbarShortcutsInfo />
 		</div>
+	);
+}
+
+function ToolbarShortcutsInfo() {
+	return (
+		<Popover>
+			<TooltipProvider delayDuration={100}>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<PopoverTrigger asChild>
+							<Button
+								variant="text"
+								size="icon"
+								className="size-7 rounded-sm text-muted-foreground hover:text-foreground cursor-pointer"
+								aria-label="Timeline shortcuts and tips"
+							>
+								<Info className="size-3.5" />
+							</Button>
+						</PopoverTrigger>
+					</TooltipTrigger>
+					<TooltipContent>Timeline Keyboard Shortcuts & Tips</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+			<PopoverContent
+				align="end"
+				className="w-80 p-4 text-xs space-y-3 bg-card border-border shadow-xl rounded-xl z-200"
+			>
+				<div className="flex items-center justify-between pb-2 border-b border-border/60">
+					<span className="font-semibold text-foreground flex items-center gap-1.5">
+						<Keyboard className="size-4 text-orange-500" />
+						Timeline Shortcuts
+					</span>
+					<span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+						Cheatsheet
+					</span>
+				</div>
+
+				<div className="space-y-1.5">
+					<div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+						Cutting & Editing Tools
+					</div>
+					<div className="grid grid-cols-2 gap-1.5">
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Split clip</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								S
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Trim start</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								Q
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Trim end</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								W
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Duplicate</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								Ctrl+D
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40 col-span-2">
+							<span className="text-muted-foreground">Delete clip</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								Del / Backspace
+							</kbd>
+						</div>
+					</div>
+				</div>
+
+				<div className="space-y-1.5">
+					<div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+						Playback & Navigation
+					</div>
+					<div className="grid grid-cols-2 gap-1.5">
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Play / Pause</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								Space
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Bookmark</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								B
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Snapping</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								M
+							</kbd>
+						</div>
+						<div className="flex items-center justify-between p-1.5 rounded bg-muted/40">
+							<span className="text-muted-foreground">Zoom track</span>
+							<kbd className="px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px] font-bold">
+								Ctrl+Scroll
+							</kbd>
+						</div>
+					</div>
+				</div>
+			</PopoverContent>
+		</Popover>
 	);
 }
 

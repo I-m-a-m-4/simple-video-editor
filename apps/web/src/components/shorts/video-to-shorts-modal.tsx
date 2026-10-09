@@ -30,6 +30,64 @@ import {
 	Zap,
 } from "lucide-react";
 
+import { buildElementFromMedia, buildTextElement } from "@/timeline/element-utils";
+import { mediaTimeFromSeconds, ZERO_MEDIA_TIME } from "@/wasm";
+import { useAiStore, DEFAULT_GROQ_KEY } from "@/ai/store";
+import { GROQ_API_URL } from "@/ai/types";
+
+async function generateAiShortsHook(
+	title: string,
+	apiKey?: string,
+): Promise<{ hookText: string; subtitleText: string }> {
+	const groqKey = apiKey || useAiStore.getState().apiKey || DEFAULT_GROQ_KEY;
+	if (groqKey) {
+		try {
+			const res = await fetch(GROQ_API_URL, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${groqKey}`,
+				},
+				body: JSON.stringify({
+					model: "llama-3.3-70b-versatile",
+					messages: [
+						{
+							role: "system",
+							content:
+								"You are an expert viral TikTok, Reels, and YouTube Shorts video editor. Given a video title or topic, create a 3-5 word high-CTR viral hook headline and a 4-8 word captivating subtitle. Return strictly valid JSON: {\"hookText\": \"...\", \"subtitleText\": \"...\"}.",
+						},
+						{
+							role: "user",
+							content: `Video topic: "${title}"`,
+						},
+					],
+					response_format: { type: "json_object" },
+					temperature: 0.7,
+				}),
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				const content = JSON.parse(data.choices?.[0]?.message?.content || "{}");
+				if (content.hookText) {
+					return {
+						hookText: content.hookText,
+						subtitleText: content.subtitleText || "Wait till you see this! 👀",
+					};
+				}
+			}
+		} catch (err) {
+			console.warn("Groq Shorts AI generation failed, using smart fallback:", err);
+		}
+	}
+
+	const cleanTitle = title.replace(/\.[^/.]+$/, "").replace(/ \(Shorts\)/i, "");
+	return {
+		hookText: `${cleanTitle.slice(0, 30)} 🔥`,
+		subtitleText: "Wait till you see the end! 👀",
+	};
+}
+
 interface VideoToShortsModalProps {
 	isOpen: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -85,28 +143,141 @@ export function VideoToShortsModal({
 		try {
 			// 1. Create a 9:16 vertical project for YouTube Shorts / TikTok / Reels
 			const projectId = await editor.project.createNewProject({
-				name: projectName.trim() || "Untitled Shorts",
+				name: projectName.trim() || "Viral Shorts Reel",
 				canvasSize: { width: 1080, height: 1920 },
 				fps: { numerator: 30, denominator: 1 },
 			});
 
 			// 2. If a video file was selected, process and import it into the project
 			if (selectedFile) {
-				setProcessStatus("Importing video asset into workspace...");
+				setProcessStatus("Importing video footage into workspace...");
 				const processedAssets = await processMediaAssets({ files: [selectedFile] });
 
+				let savedVideoAsset: any = null;
 				for (const asset of processedAssets) {
-					await editor.media.addMediaAsset({
+					const saved = await editor.media.addMediaAsset({
 						projectId,
 						asset,
+					});
+					if (asset.type === "video") {
+						savedVideoAsset = saved;
+					}
+				}
+
+				const videoAsset = processedAssets.find((a) => a.type === "video") ?? processedAssets[0];
+				if (videoAsset && savedVideoAsset) {
+					setProcessStatus("Applying AI Auto-Reframe to 9:16 vertical...");
+					const rawDuration = videoAsset.duration ?? 30;
+					const targetDurationSec =
+						clipDuration === "full"
+							? rawDuration
+							: Math.min(rawDuration, Number(clipDuration) || 30);
+					const elementDuration = mediaTimeFromSeconds({ seconds: targetDurationSec });
+
+					// Build video element
+					const videoElement = buildElementFromMedia({
+						mediaId: savedVideoAsset.id,
+						mediaType: "video",
+						name: videoAsset.name,
+						duration: elementDuration,
+						startTime: ZERO_MEDIA_TIME,
+					});
+
+					// If autoReframe is on, zoom in 1.78x so 16:9 widescreen video fills the 9:16 frame cleanly
+					if (autoReframe && videoElement.params) {
+						videoElement.params["transform.scaleX"] = 1.78;
+						videoElement.params["transform.scaleY"] = 1.78;
+						videoElement.params["transform.positionX"] = 0;
+						videoElement.params["transform.positionY"] = 0;
+					}
+
+					// Insert video onto timeline
+					editor.timeline.insertElement({
+						element: videoElement,
+						placement: { mode: "auto" },
+					});
+
+					// 3. AI Dynamic Captions & Viral Hook
+					if (autoCaptions) {
+						setProcessStatus("Generating AI viral hook & animated captions...");
+						const { hookText, subtitleText } = await generateAiShortsHook(projectName);
+
+						// Top viral hook text
+						const hookElement = buildTextElement({
+							raw: {
+								name: "Viral Hook Headline",
+								duration: mediaTimeFromSeconds({ seconds: Math.min(4, targetDurationSec) }),
+								params: {
+									content: hookText,
+									fontSize: 48,
+									fontWeight: "bold",
+									color: "#f97316",
+									textAlign: "center",
+									"transform.positionY": -320,
+								},
+							},
+							startTime: ZERO_MEDIA_TIME,
+						});
+
+						// Center caption
+						const captionElement = buildTextElement({
+							raw: {
+								name: "Dynamic Subtitle",
+								duration: mediaTimeFromSeconds({ seconds: targetDurationSec }),
+								params: {
+									content: subtitleText,
+									fontSize: 36,
+									fontWeight: "bold",
+									color: "#ffffff",
+									textAlign: "center",
+									"transform.positionY": 280,
+								},
+							},
+							startTime: ZERO_MEDIA_TIME,
+						});
+
+						editor.timeline.insertElement({
+							element: hookElement,
+							placement: { mode: "auto" },
+						});
+						editor.timeline.insertElement({
+							element: captionElement,
+							placement: { mode: "auto" },
+						});
+					}
+				}
+			} else {
+				// Blank project with optional captions template
+				if (autoCaptions) {
+					const { hookText } = await generateAiShortsHook(projectName);
+					const hookElement = buildTextElement({
+						raw: {
+							name: "Shorts Title",
+							duration: mediaTimeFromSeconds({ seconds: 15 }),
+							params: {
+								content: hookText,
+								fontSize: 48,
+								fontWeight: "bold",
+								color: "#f97316",
+								textAlign: "center",
+								"transform.positionY": -280,
+							},
+						},
+						startTime: ZERO_MEDIA_TIME,
+					});
+					editor.timeline.insertElement({
+						element: hookElement,
+						placement: { mode: "auto" },
 					});
 				}
 			}
 
-			await new Promise((r) => setTimeout(r, 300));
-			setProcessStatus("Finalizing studio workspace...");
+			// 4. Save project state
+			setProcessStatus("Saving timeline & preparing editor...");
+			await editor.project.saveCurrentProject();
 
-			toast.success("Shorts project created! 9:16 Canvas ready.");
+			await new Promise((r) => setTimeout(r, 200));
+			toast.success("Shorts project created! 9:16 Canvas & AI Timeline ready.");
 			onOpenChange(false);
 			router.push(`/editor/${projectId}`);
 		} catch (error) {

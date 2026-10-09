@@ -45,7 +45,7 @@ export function Onboarding() {
 					<div className="space-y-5">
 						<div className="space-y-3">
 							<Title title="Welcome to AmberCut! 🎉" />
-							<Description description="You're among the first to try AmberCut - the modern, privacy-first video editor with Groq AI." />
+							<Description description="You're among the first to try AmberCut - the modern, privacy-first video editor with Amber AI." />
 						</div>
 						<NextButton onClick={handleNext}>Next</NextButton>
 					</div>

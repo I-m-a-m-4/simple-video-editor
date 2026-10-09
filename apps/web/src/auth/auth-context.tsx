@@ -28,6 +28,7 @@ export interface AuthContextType {
 	signInWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
 	signUpWithEmail: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
 	signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+	completeExternalSignIn: (profile: UserProfile) => void;
 	signOut: () => Promise<void>;
 }
 
@@ -68,6 +69,7 @@ const AuthContext = createContext<AuthContextType>({
 	signInWithEmail: async () => ({ success: false }),
 	signUpWithEmail: async () => ({ success: false }),
 	signInWithGoogle: async () => ({ success: false }),
+	completeExternalSignIn: () => {},
 	signOut: async () => {},
 });
 
@@ -233,6 +235,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		}
 	};
 
+	const completeExternalSignIn = (profile: UserProfile) => {
+		saveUserSession(profile);
+	};
+
 	return (
 		<AuthContext.Provider
 			value={{
@@ -242,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				signInWithEmail,
 				signUpWithEmail,
 				signInWithGoogle,
+				completeExternalSignIn,
 				signOut,
 			}}
 		>

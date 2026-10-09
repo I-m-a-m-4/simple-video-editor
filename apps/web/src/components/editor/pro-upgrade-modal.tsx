@@ -101,7 +101,7 @@ export function ProUpgradeModal() {
 		{
 			icon: <Cloud className="size-4 text-orange-500" />,
 			title: "Cloud Backup & Agent Copilot",
-			desc: "Autonomous Groq agent timeline tools and workspace syncing.",
+			desc: "Autonomous Amber AI agent timeline tools and workspace syncing.",
 		},
 	];
 

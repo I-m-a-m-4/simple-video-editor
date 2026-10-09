@@ -84,7 +84,7 @@ export function PricingSection() {
 				"Super-resolution HD sharpening",
 				"Face retouch & skin smoothing",
 				"Unlimited audio & video tracks",
-				"Autonomous Groq AI Copilot assistant",
+				"Autonomous Amber AI Copilot assistant",
 				"Instant checkout via Cards, Transfer & USSD",
 			],
 			notIncluded: [],

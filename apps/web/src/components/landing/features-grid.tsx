@@ -80,7 +80,7 @@ export function FeaturesGrid() {
 			badge: "Copilot",
 			title: "Autonomous AI Timeline Agent",
 			description:
-				"Powered by Groq LPUs. Describe your edits in plain English and let the agent split clips, add B-roll, and arrange music automatically.",
+				"Powered by Amber AI. Describe your edits in plain English and let the agent split clips, add B-roll, and arrange music automatically.",
 		},
 	];
 

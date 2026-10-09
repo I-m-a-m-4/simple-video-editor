@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { useProStore } from "@/stores/pro-store";
 import { recordTelemetryEvent } from "@/stores/telemetry-store";
+import { cn } from "@/utils/ui";
 import {
 	Sparkles,
 	Sliders,
@@ -61,6 +62,11 @@ export function EmptyView() {
 
 	// Global edit toggle states
 	const [colorsBetter, setColorsBetter] = useState(false);
+	const [vibrancyVal, setVibrancyVal] = useState(1.25);
+	const [saturationVal, setSaturationVal] = useState(1.2);
+	const [contrastVal, setContrastVal] = useState(1.1);
+	const [warmthVal, setWarmthVal] = useState(0);
+	const [activeColorPreset, setActiveColorPreset] = useState<string>("vivid");
 	const [colorsConsistent, setColorsConsistent] = useState(false);
 	const [volumeConsistent, setVolumeConsistent] = useState(false);
 	const [voiceClearer, setVoiceClearer] = useState(false);
@@ -140,12 +146,12 @@ export function EmptyView() {
 		return updates.length;
 	};
 
-	// 1. Smart Suggestions (AI Powered Analyze with Groq API)
+	// 1. Smart Suggestions (AI Powered Analyze with Amber AI)
 	const handleAnalyze = async () => {
 		setIsAnalyzing(true);
 		setAnalysisDone(false);
 		setSuggestionsApplied(false);
-		toast.loading("AI Smart Suggestions: Scanning timeline with Groq AI...", {
+		toast.loading("AI Smart Suggestions: Scanning timeline with Amber AI...", {
 			id: "ai-analyze",
 		});
 
@@ -158,7 +164,7 @@ export function EmptyView() {
 			toast.success(`Timeline analysis complete! ${suggestions.length} AI suggestions ready.`);
 			recordTelemetryEvent(
 				"smart_suggestions",
-				"AI Smart Suggestions Groq Scan",
+				"AI Smart Suggestions Amber AI Scan",
 				`Analyzed timeline and found ${suggestions.length} recommendations`,
 			);
 		} catch (err) {
@@ -240,22 +246,15 @@ export function EmptyView() {
 
 	// 2. Make colors better (AI color enhancement & vibrancy)
 	const handleColorsBetter = (nextVal: boolean) => {
-		if (!isPro) {
-			toast.info('"Make colors better" is a PRO feature', {
-				description: "Upgrade with Flutterwave to unlock AI color enhancement & vibrancy.",
-				action: { label: "View Pro", onClick: () => openModal() },
-			});
-			openModal();
-			return;
-		}
-
 		setColorsBetter(nextVal);
 		const count = executeTimelineUpdate(
 			(el) => el.type === "video" || el.type === "image",
 			() => ({
 				colorEnhance: nextVal,
-				vibrancy: nextVal ? 1.25 : 1.0,
-				saturation: nextVal ? 1.2 : 1.0,
+				vibrancy: nextVal ? vibrancyVal : 1.0,
+				saturation: nextVal ? saturationVal : 1.0,
+				contrast: nextVal ? contrastVal : 1.0,
+				temperature: nextVal ? warmthVal : 0,
 			}),
 		);
 
@@ -267,22 +266,43 @@ export function EmptyView() {
 
 		toast.success(
 			nextVal
-				? `AI color enhancement & vibrancy applied to ${count} clips`
+				? `AI color enhancement & vibrancy applied`
 				: "AI color enhancement disabled",
+		);
+	};
+
+	const applyColorTuning = (updates: {
+		vibrancy?: number;
+		saturation?: number;
+		contrast?: number;
+		warmth?: number;
+		preset?: string;
+	}) => {
+		const newVib = updates.vibrancy ?? vibrancyVal;
+		const newSat = updates.saturation ?? saturationVal;
+		const newCon = updates.contrast ?? contrastVal;
+		const newWarm = updates.warmth ?? warmthVal;
+
+		if (updates.vibrancy !== undefined) setVibrancyVal(newVib);
+		if (updates.saturation !== undefined) setSaturationVal(newSat);
+		if (updates.contrast !== undefined) setContrastVal(newCon);
+		if (updates.warmth !== undefined) setWarmthVal(newWarm);
+		if (updates.preset !== undefined) setActiveColorPreset(updates.preset);
+
+		executeTimelineUpdate(
+			(el) => el.type === "video" || el.type === "image",
+			() => ({
+				colorEnhance: true,
+				vibrancy: newVib,
+				saturation: newSat,
+				contrast: newCon,
+				temperature: newWarm,
+			}),
 		);
 	};
 
 	// 3. Make colors consistent (Auto-match exposure & white balance)
 	const handleColorsConsistent = (nextVal: boolean) => {
-		if (!isPro) {
-			toast.info('"Make colors consistent" is a PRO feature', {
-				description: "Upgrade with Flutterwave to unlock auto-match exposure & white balance.",
-				action: { label: "View Pro", onClick: () => openModal() },
-			});
-			openModal();
-			return;
-		}
-
 		setColorsConsistent(nextVal);
 		const count = executeTimelineUpdate(
 			(el) => el.type === "video" || el.type === "image",
@@ -301,7 +321,7 @@ export function EmptyView() {
 
 		toast.success(
 			nextVal
-				? `Auto-match exposure & white balance applied to ${count} clips`
+				? `Auto-match exposure & white balance applied`
 				: "Exposure matching disabled",
 		);
 	};
@@ -357,15 +377,6 @@ export function EmptyView() {
 
 	// 6. Make video clearer (HD) (Super-resolution sharpening)
 	const handleVideoClearerHD = (nextVal: boolean) => {
-		if (!isPro) {
-			toast.info('"Make video clearer (HD)" is a PRO feature', {
-				description: "Upgrade with Flutterwave to unlock super-resolution sharpening.",
-				action: { label: "View Pro", onClick: () => openModal() },
-			});
-			openModal();
-			return;
-		}
-
 		setVideoClearerHD(nextVal);
 		const count = executeTimelineUpdate(
 			(el) => el.type === "video" || el.type === "image",
@@ -564,23 +575,116 @@ export function EmptyView() {
 
 							<div className="rounded-xl border border-border/80 bg-card/40 divide-y divide-border/60">
 								{/* Make colors better */}
-								<div className="flex items-center justify-between p-3">
-									<div className="flex items-center gap-2.5">
-										<Sliders className="size-4 text-purple-500" />
-										<div>
-											<div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-												<span>Make colors better</span>
-												<Crown className="size-3 text-orange-500 fill-orange-500" />
-											</div>
-											<div className="text-[10px] text-muted-foreground">
-												AI color enhancement &amp; vibrancy
+								<div>
+									<div className="flex items-center justify-between p-3">
+										<div className="flex items-center gap-2.5">
+											<Sliders className="size-4 text-purple-500" />
+											<div>
+												<div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+													<span>Make colors better</span>
+													<Crown className="size-3 text-orange-500 fill-orange-500" />
+												</div>
+												<div className="text-[10px] text-muted-foreground">
+													AI color enhancement &amp; vibrancy
+												</div>
 											</div>
 										</div>
+										<Switch
+											checked={colorsBetter}
+											onCheckedChange={handleColorsBetter}
+										/>
 									</div>
-									<Switch
-										checked={colorsBetter}
-										onCheckedChange={handleColorsBetter}
-									/>
+
+									{colorsBetter && (
+										<div className="px-3.5 pb-3.5 pt-1 space-y-3 bg-muted/20 border-t border-border/40">
+											<div className="flex items-center gap-1.5 flex-wrap pt-1">
+												{[
+													{ id: "vivid", label: "Vivid AI", vib: 1.3, sat: 1.25, con: 1.1, warm: 0 },
+													{ id: "punchy", label: "Punchy HDR", vib: 1.45, sat: 1.35, con: 1.18, warm: 0 },
+													{ id: "warm", label: "Warm Film", vib: 1.15, sat: 1.1, con: 1.05, warm: 12 },
+													{ id: "clean", label: "Crisp Clean", vib: 1.2, sat: 1.05, con: 1.15, warm: -4 },
+												].map((preset) => (
+													<button
+														key={preset.id}
+														type="button"
+														onClick={() => {
+															applyColorTuning({
+																vibrancy: preset.vib,
+																saturation: preset.sat,
+																contrast: preset.con,
+																warmth: preset.warm,
+																preset: preset.id,
+															});
+														}}
+														className={cn(
+															"px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all cursor-pointer",
+															activeColorPreset === preset.id
+																? "bg-purple-500/20 text-purple-400 border-purple-500/50 shadow-xs"
+																: "bg-background/80 text-muted-foreground border-border hover:text-foreground",
+														)}
+													>
+														{preset.label}
+													</button>
+												))}
+											</div>
+
+											<div className="space-y-2.5 text-[11px]">
+												<div>
+													<div className="flex justify-between text-muted-foreground mb-1 text-[10px]">
+														<span>Vibrancy Boost</span>
+														<span className="font-mono text-foreground font-semibold">
+															+{Math.round((vibrancyVal - 1) * 100)}%
+														</span>
+													</div>
+													<Slider
+														value={[vibrancyVal]}
+														min={1.0}
+														max={1.6}
+														step={0.05}
+														onValueChange={([val]) =>
+															applyColorTuning({ vibrancy: val, preset: "custom" })
+														}
+													/>
+												</div>
+
+												<div>
+													<div className="flex justify-between text-muted-foreground mb-1 text-[10px]">
+														<span>Color Saturation</span>
+														<span className="font-mono text-foreground font-semibold">
+															{Math.round(saturationVal * 100)}%
+														</span>
+													</div>
+													<Slider
+														value={[saturationVal]}
+														min={0.8}
+														max={1.6}
+														step={0.05}
+														onValueChange={([val]) =>
+															applyColorTuning({ saturation: val, preset: "custom" })
+														}
+													/>
+												</div>
+
+												<div>
+													<div className="flex justify-between text-muted-foreground mb-1 text-[10px]">
+														<span>Dynamic Contrast</span>
+														<span className="font-mono text-foreground font-semibold">
+															{Math.round(contrastVal * 100)}%
+														</span>
+													</div>
+													<Slider
+														value={[contrastVal]}
+														min={0.9}
+														max={1.3}
+														step={0.02}
+														onValueChange={([val]) =>
+															applyColorTuning({ contrast: val, preset: "custom" })
+														}
+													/>
+												</div>
+											</div>
+										</div>
+									)}
 								</div>
 
 								{/* Make colors consistent */}

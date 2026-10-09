@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { DEFAULT_LOGO_URL } from "@/site/brand";
 import { Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { DesktopGoogleAuthDialog } from "@/components/auth/desktop-google-auth-dialog";
+import { isDesktopApp } from "@/utils/desktop";
 
 function LoginForm() {
 	const router = useRouter();
@@ -24,6 +26,7 @@ function LoginForm() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+	const [isDesktopAuthOpen, setIsDesktopAuthOpen] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
 	// If already authenticated and done loading, redirect
@@ -61,6 +64,13 @@ function LoginForm() {
 
 	const handleGoogleSignIn = async () => {
 		setErrorMessage(null);
+
+		// If running in Tauri desktop app, use external browser OAuth flow
+		if (isDesktopApp()) {
+			setIsDesktopAuthOpen(true);
+			return;
+		}
+
 		setIsGoogleLoading(true);
 		try {
 			const res = await signInWithGoogle();
@@ -213,6 +223,15 @@ function LoginForm() {
 					Sign up for free
 				</Link>
 			</div>
+
+			{/* Desktop Google Sign In Dialog */}
+			<DesktopGoogleAuthDialog
+				isOpen={isDesktopAuthOpen}
+				onOpenChange={setIsDesktopAuthOpen}
+				onSuccess={() => {
+					router.replace(redirectUrl);
+				}}
+			/>
 		</div>
 	);
 }

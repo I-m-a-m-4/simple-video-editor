@@ -5,11 +5,12 @@
   "identifier": "com.ambercut.editor",
   "build": {
     "beforeDevCommand": "bun dev:web",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:3000/login",
     "beforeBuildCommand": "bun build:web",
     "frontendDist": "../apps/web/out"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
@@ -36,6 +37,14 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "mkv", "mov", "webm", "avi", "m4v", "wmv"],
+        "name": "Video File",
+        "description": "Video Media File",
+        "role": "Viewer"
+      }
     ],
     "publisher": "CN=AmberCut",
     "windows": {

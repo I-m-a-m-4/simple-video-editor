@@ -83,6 +83,13 @@ export function MediaView() {
 	const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
 	const [isCompressorModalOpen, setIsCompressorModalOpen] = useState(false);
 	const [compressorTab, setCompressorTab] = useState<"video" | "image">("video");
+	const [compressorInitialFile, setCompressorInitialFile] = useState<File | null>(null);
+
+	const handleCompressAsset = (asset: MediaAsset) => {
+		setCompressorInitialFile(asset.file);
+		setCompressorTab(asset.type === "video" ? "video" : "image");
+		setIsCompressorModalOpen(true);
+	};
 
 	const processFiles = async ({ files }: { files: File[] }) => {
 		if (!files || files.length === 0) return;
@@ -239,6 +246,7 @@ export function MediaView() {
 							items={filteredMediaItems}
 							mode={mediaViewMode}
 							onRemove={handleRemove}
+							onCompress={handleCompressAsset}
 						/>
 					</SelectableSurface>
 				)}
@@ -249,8 +257,12 @@ export function MediaView() {
 			/>
 			<MediaCompressorModal
 				isOpen={isCompressorModalOpen}
-				onOpenChange={setIsCompressorModalOpen}
+				onOpenChange={(open) => {
+					setIsCompressorModalOpen(open);
+					if (!open) setCompressorInitialFile(null);
+				}}
 				defaultTab={compressorTab}
+				initialFile={compressorInitialFile}
 			/>
 		</>
 	);
@@ -325,6 +337,7 @@ function MediaItemWithContextMenu({
 	item,
 	children,
 	onRemove,
+	onCompress,
 }: {
 	item: MediaAsset;
 	children: React.ReactNode;
@@ -335,6 +348,7 @@ function MediaItemWithContextMenu({
 		event: React.MouseEvent;
 		ids: string[];
 	}) => void;
+	onCompress?: (item: MediaAsset) => void;
 }) {
 	const { isSelected, selectedIds } = useSelection();
 	const idsToDelete = isSelected(item.id) ? selectedIds : [item.id];
@@ -345,6 +359,18 @@ function MediaItemWithContextMenu({
 		<ContextMenu>
 			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
 			<ContextMenuContent>
+				{(item.type === "image" || item.type === "video") && onCompress && (
+					<ContextMenuItem
+						onClick={(event) => {
+							event.stopPropagation();
+							onCompress(item);
+						}}
+						className="cursor-pointer gap-2"
+					>
+						<Minimize2 className="size-3.5 text-indigo-500" />
+						Compress {item.type}...
+					</ContextMenuItem>
+				)}
 				<ContextMenuItem>Export clips</ContextMenuItem>
 				<ContextMenuItem
 					variant="destructive"
@@ -363,6 +389,7 @@ function MediaItemList({
 	items,
 	mode,
 	onRemove,
+	onCompress,
 }: {
 	items: MediaAsset[];
 	mode: MediaViewMode;
@@ -373,6 +400,7 @@ function MediaItemList({
 		event: React.MouseEvent;
 		ids: string[];
 	}) => void;
+	onCompress?: (item: MediaAsset) => void;
 }) {
 	const isGrid = mode === "grid";
 
@@ -384,7 +412,12 @@ function MediaItemList({
 			}
 		>
 			{items.map((item) => (
-				<MediaItemWithContextMenu item={item} onRemove={onRemove} key={item.id}>
+				<MediaItemWithContextMenu
+					item={item}
+					onRemove={onRemove}
+					onCompress={onCompress}
+					key={item.id}
+				>
 					<SelectableItem className={cn(!isGrid && "w-full")} id={item.id}>
 						<MediaAssetDraggable
 							item={item}

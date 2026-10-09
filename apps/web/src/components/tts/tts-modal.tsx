@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { useEditor } from "@/editor/use-editor";
 import { processMediaAssets } from "@/media/processing";
+import { buildElementFromMedia } from "@/timeline/element-utils";
+import { mediaTimeFromSeconds, ZERO_MEDIA_TIME } from "@/wasm";
 
 interface TtsModalProps {
 	isOpen: boolean;
@@ -309,16 +311,46 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 			const file = new File([generatedAudioBlob], `Voiceover-${Date.now()}.mp3`, {
 				type: "audio/mp3",
 			});
-			const projectId = await editor.project.createNewProject({
-				name: `Voiceover Project - ${new Date().toLocaleDateString()}`,
-			});
 			const processedAssets = await processMediaAssets({ files: [file] });
-			for (const asset of processedAssets) {
-				await editor.media.addMediaAsset({ projectId, asset });
+			const audioAsset = processedAssets[0];
+
+			const activeProject = editor.project.getActiveOrNull();
+			let targetProjectId = activeProject?.metadata.id;
+
+			if (!targetProjectId) {
+				targetProjectId = await editor.project.createNewProject({
+					name: `Voiceover Project - ${new Date().toLocaleDateString()}`,
+				});
 			}
-			toast.success("Voiceover imported into new project!");
+
+			if (audioAsset) {
+				const savedAsset = await editor.media.addMediaAsset({ projectId: targetProjectId, asset: audioAsset });
+				if (!savedAsset) throw new Error("Failed to save audio asset.");
+
+				const duration =
+					audioAsset.duration != null
+						? mediaTimeFromSeconds({ seconds: audioAsset.duration })
+						: mediaTimeFromSeconds({ seconds: Math.max(3, text.length * 0.08) });
+
+				const audioElement = buildElementFromMedia({
+					mediaId: savedAsset.id,
+					mediaType: "audio",
+					name: audioAsset.name,
+					duration,
+					startTime: ZERO_MEDIA_TIME,
+				});
+
+				editor.timeline.insertElement({
+					element: audioElement,
+					placement: { mode: "auto" },
+				});
+
+				await editor.project.saveCurrentProject();
+			}
+
+			toast.success("Voiceover added to timeline!");
 			onOpenChange(false);
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor/${targetProjectId}`);
 		} catch (err) {
 			console.error(err);
 			toast.error("Failed to import voiceover into editor.");
@@ -336,9 +368,9 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-2xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
+			<DialogContent className="w-[95vw] sm:max-w-3xl lg:max-w-4xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-2xl max-h-[92vh] flex flex-col">
 				{/* Header */}
-				<div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-muted/30">
+				<div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30 shrink-0">
 					<div className="flex items-center gap-2.5">
 						<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
 							<Volume2 className="size-4" />
@@ -369,7 +401,7 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 
 				{/* Key Drawer */}
 				{showKeyConfig && (
-					<div className="p-4 bg-orange-500/5 border-b border-orange-500/20 flex flex-col gap-3">
+					<div className="p-4 bg-orange-500/5 border-b border-orange-500/20 flex flex-col gap-3 shrink-0">
 						<div className="flex items-start gap-2">
 							<AlertCircle className="size-4 text-orange-500 shrink-0 mt-0.5" />
 							<div className="text-xs text-muted-foreground">
@@ -437,28 +469,28 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 				)}
 
 				{/* Body */}
-				<div className="p-5 flex flex-col gap-4">
+				<div className="p-6 flex flex-col gap-5 overflow-y-auto min-h-0 flex-1">
 					<Tabs
 						value={provider}
 						onValueChange={(val) => setProvider(val as any)}
 						className="w-full"
 					>
-						<TabsList className="bg-muted/50 p-1 w-full grid grid-cols-3 rounded-lg">
+						<TabsList className="bg-muted/60 p-1 w-full grid grid-cols-3 rounded-xl h-10">
 							<TabsTrigger
 								value="browser"
-								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-md"
+								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
 								Free (Offline)
 							</TabsTrigger>
 							<TabsTrigger
 								value="openai"
-								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-md"
+								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
 								OpenAI TTS
 							</TabsTrigger>
 							<TabsTrigger
 								value="elevenlabs"
-								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-md"
+								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
 								ElevenLabs AI
 							</TabsTrigger>
@@ -466,14 +498,14 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 					</Tabs>
 
 					{/* Voice Selection */}
-					<div className="flex flex-col gap-1.5">
+					<div className="flex flex-col gap-1.5 w-full">
 						<Label className="text-xs font-semibold">Choose Voice</Label>
 
 						{provider === "browser" && (
 							<select
 								value={selectedBrowserVoiceURI}
 								onChange={(e) => setSelectedBrowserVoiceURI(e.target.value)}
-								className="w-full bg-muted/40 border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-orange-500"
+								className="w-full bg-muted/40 border border-border rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-orange-500"
 							>
 								{browserVoices.map((v) => (
 									<option key={v.voiceURI} value={v.voiceURI} className="bg-card text-foreground">
@@ -484,15 +516,15 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 						)}
 
 						{provider === "openai" && (
-							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 w-full">
 								{OPENAI_VOICES.map((v) => (
 									<button
 										key={v.id}
 										type="button"
 										onClick={() => setSelectedOpenAiVoice(v.id)}
-										className={`p-2.5 rounded-lg border text-left transition-all flex flex-col gap-0.5 ${
+										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
 											selectedOpenAiVoice === v.id
-												? "bg-orange-500/15 border-orange-500 text-foreground"
+												? "bg-orange-500/15 border-orange-500 text-foreground ring-1 ring-orange-500/30"
 												: "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
 										}`}
 									>
@@ -509,15 +541,15 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 						)}
 
 						{provider === "elevenlabs" && (
-							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 w-full">
 								{ELEVENLABS_VOICES.map((v) => (
 									<button
 										key={v.id}
 										type="button"
 										onClick={() => setSelectedElevenLabsVoice(v.id)}
-										className={`p-2.5 rounded-lg border text-left transition-all flex flex-col gap-0.5 ${
+										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
 											selectedElevenLabsVoice === v.id
-												? "bg-orange-500/15 border-orange-500 text-foreground"
+												? "bg-orange-500/15 border-orange-500 text-foreground ring-1 ring-orange-500/30"
 												: "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
 										}`}
 									>
@@ -535,28 +567,29 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 					</div>
 
 					{/* Text Input */}
-					<div className="flex flex-col gap-1.5">
+					<div className="flex flex-col gap-2 w-full">
 						<div className="flex items-center justify-between">
 							<Label className="text-xs font-semibold">Text to Speak</Label>
-							<span className="text-[10px] text-muted-foreground">{text.length} characters</span>
+							<span className="text-[10px] text-muted-foreground font-mono">{text.length} characters</span>
 						</div>
 						<Textarea
 							value={text}
 							onChange={(e) => setText(e.target.value)}
-							rows={3}
-							placeholder="Type text for narration..."
-							className="text-xs rounded-lg resize-none"
+							rows={4}
+							placeholder="Type narration or script text here..."
+							className="text-xs rounded-xl resize-none p-3 border-border focus-visible:ring-orange-500 leading-relaxed"
 						/>
 
-						{/* Quick Prompts */}
-						<div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-							<span className="text-[10px] text-muted-foreground shrink-0">Sample:</span>
+						{/* Quick Prompts with flex-wrap to prevent horizontal overflow */}
+						<div className="flex flex-wrap items-center gap-1.5 pt-1">
+							<span className="text-[11px] font-semibold text-muted-foreground mr-1 shrink-0">Sample:</span>
 							{PROMPT_SUGGESTIONS.map((suggestion, i) => (
 								<button
 									key={i}
 									type="button"
 									onClick={() => setText(suggestion)}
-									className="px-2 py-0.5 rounded text-[10px] bg-muted/50 hover:bg-muted text-muted-foreground border border-border/50 truncate max-w-xs shrink-0"
+									className="px-2.5 py-1 rounded-lg text-[11px] bg-muted/50 hover:bg-muted text-foreground/85 hover:text-foreground border border-border/60 transition-colors cursor-pointer text-left line-clamp-1 max-w-sm"
+									title={suggestion}
 								>
 									{suggestion}
 								</button>
@@ -564,10 +597,10 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 						</div>
 					</div>
 
-					{/* Controls */}
-					<div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 rounded-lg bg-muted/30 border border-border">
-						<div className="flex flex-col gap-3">
-							<div className="flex items-center justify-between text-xs">
+					{/* Controls: Speed Rate & Pitch */}
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-4 rounded-xl bg-muted/30 border border-border w-full">
+						<div className="flex flex-col gap-2.5 px-1">
+							<div className="flex items-center justify-between text-xs font-medium">
 								<span className="text-muted-foreground">Speed Rate</span>
 								<span className="text-orange-500 font-mono font-bold">{rate.toFixed(1)}x</span>
 							</div>
@@ -577,11 +610,12 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 								max={2.0}
 								step={0.1}
 								onValueChange={([val]) => setRate(val)}
+								className="py-1"
 							/>
 						</div>
 
-						<div className="flex flex-col gap-3">
-							<div className="flex items-center justify-between text-xs">
+						<div className="flex flex-col gap-2.5 px-1">
+							<div className="flex items-center justify-between text-xs font-medium">
 								<span className="text-muted-foreground">Pitch</span>
 								<span className="text-orange-500 font-mono font-bold">{pitch.toFixed(1)}x</span>
 							</div>
@@ -591,13 +625,14 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 								max={1.5}
 								step={0.1}
 								onValueChange={([val]) => setPitch(val)}
+								className="py-1"
 							/>
 						</div>
 					</div>
 
 					{/* Audio Result */}
 					{generatedAudioUrl && (
-						<div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+						<div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 w-full">
 							<audio
 								ref={audioRef}
 								src={generatedAudioUrl}

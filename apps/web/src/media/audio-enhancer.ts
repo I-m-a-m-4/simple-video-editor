@@ -41,6 +41,8 @@ export function createAudioEnhancerChain({
 		highCutHz = 12000,
 	} = config;
 
+	const nodesToDisconnect: AudioNode[] = [input];
+
 	// 1. High-Pass Filter: Cuts mic thumps, desk rumble, wind, and 50/60Hz AC mains power hum
 	if (noiseReduction) {
 		const highpass = audioContext.createBiquadFilter();
@@ -48,6 +50,7 @@ export function createAudioEnhancerChain({
 		highpass.frequency.value = lowCutHz;
 		highpass.Q.value = 0.707;
 		current.connect(highpass);
+		nodesToDisconnect.push(highpass);
 		current = highpass;
 
 		// 2. Low-Pass Filter: Shaves off high-frequency digital noise and air conditioning hiss
@@ -56,6 +59,7 @@ export function createAudioEnhancerChain({
 		lowpass.frequency.value = highCutHz;
 		lowpass.Q.value = 0.707;
 		current.connect(lowpass);
+		nodesToDisconnect.push(lowpass);
 		current = lowpass;
 	}
 
@@ -67,6 +71,7 @@ export function createAudioEnhancerChain({
 		deMud.Q.value = 1.4;
 		deMud.gain.value = -3.0; // -3dB dip
 		current.connect(deMud);
+		nodesToDisconnect.push(deMud);
 		current = deMud;
 	}
 
@@ -78,6 +83,7 @@ export function createAudioEnhancerChain({
 		clarity.Q.value = 1.2;
 		clarity.gain.value = 4.5; // +4.5dB boost for crisp vocal articulation
 		current.connect(clarity);
+		nodesToDisconnect.push(clarity);
 		current = clarity;
 	}
 
@@ -89,12 +95,14 @@ export function createAudioEnhancerChain({
 	compressor.attack.value = 0.005; // 5ms fast attack
 	compressor.release.value = 0.14; // 140ms release
 	current.connect(compressor);
+	nodesToDisconnect.push(compressor);
 	current = compressor;
 
 	// 6. Makeup Gain & Limiter Stage: Restores optimal broadcast volume
 	const makeupGain = audioContext.createGain();
 	makeupGain.gain.value = vocalBoost ? 1.25 : 1.1;
 	current.connect(makeupGain);
+	nodesToDisconnect.push(makeupGain);
 	current = makeupGain;
 
 	// Connect to final destination
@@ -103,6 +111,13 @@ export function createAudioEnhancerChain({
 	return {
 		input,
 		output: current,
+		cleanup: () => {
+			for (const node of nodesToDisconnect) {
+				try {
+					node.disconnect();
+				} catch {}
+			}
+		},
 	};
 }
 

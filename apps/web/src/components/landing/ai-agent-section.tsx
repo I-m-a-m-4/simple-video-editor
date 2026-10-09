@@ -204,7 +204,7 @@ export function AiAgentSection() {
 				<div className="text-center max-w-3xl mx-auto">
 					<Badge variant="outline" className="gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-400 border-amber-500/30">
 						<Sparkles className="size-3.5" />
-						Groq Agentic Architecture
+						Amber AI Agentic Architecture
 					</Badge>
 					<h2 className="mt-4 text-3xl font-extrabold sm:text-5xl tracking-tight">
 						The AI Doesn&apos;t Just Chat. <br />
@@ -213,7 +213,7 @@ export function AiAgentSection() {
 						</span>
 					</h2>
 					<p className="mt-4 text-base sm:text-lg text-muted-foreground font-light leading-relaxed">
-						Unlike chat wrappers that only talk, Simple Video Editor provides Groq AI with 21 direct programmatic tool handles.
+						Unlike chat wrappers that only talk, Simple Video Editor provides Amber AI with 21 direct programmatic tool handles.
 						The agent inspects project state, performs edits, verifies the result, and loops until your instruction is fully realized.
 					</p>
 				</div>
@@ -271,7 +271,7 @@ export function AiAgentSection() {
 
 							<div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 flex items-center justify-between text-xs text-emerald-400">
 								<span><strong>Outcome:</strong> {sampleWorkflows[activePromptIndex].result}</span>
-								<span className="text-[10px] font-mono opacity-80">&lt; 380ms Groq Inference</span>
+								<span className="text-[10px] font-mono opacity-80">&lt; 380ms Amber AI Inference</span>
 							</div>
 					</div>
 				</div>

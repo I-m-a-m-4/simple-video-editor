@@ -44,7 +44,7 @@ const DEFAULT_LAUNCH_PROMPT = `Announcing AmberCut 2.0
 
 The next evolution in browser-native video editing.
 - 10× faster timeline rendering with Rust WASM
-- Built-in Agentic Groq AI video copilot
+- Built-in Agentic Amber AI video copilot
 - Zero software installation required
 
 Key Innovations:
@@ -88,7 +88,7 @@ export function LaunchVideoStudio() {
 
 		setIsBuilding(true);
 		try {
-			toast.loading("Analyzing launch announcement with Groq AI...", {
+			toast.loading("Analyzing launch announcement with Amber AI...", {
 				id: "launch-gen",
 			});
 
@@ -183,7 +183,7 @@ export function LaunchVideoStudio() {
 						variant="outline"
 						className="border-amber-500/40 text-amber-400 text-[10px] font-semibold"
 					>
-						Groq Agentic Motion
+						Amber AI Agentic Motion
 					</Badge>
 				</div>
 				<p className="text-muted-foreground text-[11px] leading-relaxed">
@@ -353,7 +353,7 @@ export function LaunchVideoStudio() {
 					className="w-full gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-5 rounded-lg shadow-md shadow-amber-500/20 text-xs transition-all"
 				>
 					<Sparkles className="size-4" />
-					{isBuilding ? "Synthesizing Video..." : "Generate Launch Video with Groq"}
+					{isBuilding ? "Synthesizing Video..." : "Generate Launch Video with Amber AI"}
 				</Button>
 
 				<Button

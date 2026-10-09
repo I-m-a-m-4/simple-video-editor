@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs";
@@ -6,21 +6,52 @@ import os from "os";
 
 const execFileAsync = promisify(execFile);
 
-function resolveExecutable(candidates: (string | undefined)[], defaultCmd: string): string {
-	for (const candidate of candidates) {
-		if (!candidate) continue;
-		if (fs.existsSync(candidate)) return candidate;
-	}
+function findInSystemPath(command: string): string | null {
 	const isWindows = process.platform === "win32";
-	const exeName = isWindows && !defaultCmd.endsWith(".exe") ? `${defaultCmd}.exe` : defaultCmd;
-	return exeName;
+	const exeName = isWindows && !command.endsWith(".exe") ? `${command}.exe` : command;
+	const pathEnv = process.env.PATH || process.env.Path || "";
+	const dirs = pathEnv.split(path.delimiter);
+
+	for (const dir of dirs) {
+		if (!dir) continue;
+		const fullPath = path.join(dir, exeName);
+		try {
+			if (fs.existsSync(fullPath)) {
+				return fullPath;
+			}
+		} catch {}
+	}
+	return null;
 }
 
-const localAppData = process.env.LOCALAPPDATA || "";
-const userProfile = process.env.USERPROFILE || "";
+function resolveExecutable(candidates: (string | undefined)[], defaultCmd: string): string {
+	// 1. Check explicit candidate paths
+	for (const candidate of candidates) {
+		if (!candidate) continue;
+		try {
+			if (fs.existsSync(candidate)) {
+				return candidate;
+			}
+		} catch {}
+	}
+
+	// 2. Search in system PATH
+	const inPath = findInSystemPath(defaultCmd);
+	if (inPath) {
+		return inPath;
+	}
+
+	// 3. Fallback to command name
+	const isWindows = process.platform === "win32";
+	return isWindows && !defaultCmd.endsWith(".exe") ? `${defaultCmd}.exe` : defaultCmd;
+}
+
+const localAppData = process.env.LOCALAPPDATA || process.env.LocalAppData || "";
 
 const YTDLP_CANDIDATES = [
 	process.env.YTDLP_PATH,
+	// Prefer system PATH first before hardcoded folders
+	findInSystemPath("yt-dlp") || undefined,
 	localAppData
 		? path.join(
 				localAppData,
@@ -31,22 +62,11 @@ const YTDLP_CANDIDATES = [
 				"yt-dlp.exe",
 			)
 		: undefined,
-	userProfile
-		? path.join(
-				userProfile,
-				"Documents",
-				"media-grabber",
-				"src-tauri",
-				"bin",
-				"yt-dlp-x86_64-pc-windows-msvc.exe",
-			)
-		: undefined,
-	"yt-dlp.exe",
-	"yt-dlp",
 ];
 
 const FFMPEG_CANDIDATES = [
 	process.env.FFMPEG_PATH,
+	findInSystemPath("ffmpeg") || undefined,
 	localAppData
 		? path.join(
 				localAppData,
@@ -59,8 +79,6 @@ const FFMPEG_CANDIDATES = [
 				"ffmpeg.exe",
 			)
 		: undefined,
-	"ffmpeg.exe",
-	"ffmpeg",
 ];
 
 export interface ShortOptions {
@@ -84,52 +102,179 @@ export interface VideoInfo {
  */
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
 	const ytdlp = resolveExecutable(YTDLP_CANDIDATES, "yt-dlp");
-	const args = ["--dump-json", "--skip-download", url];
+	const args = [
+		"--dump-json",
+		"--no-playlist",
+		"--skip-download",
+		"--no-warnings",
+		"--socket-timeout",
+		"20",
+		"--extractor-args",
+		"youtube:player_client=default,ios,mweb",
+		url,
+	];
 
-	const { stdout } = await execFileAsync(ytdlp, args, { maxBuffer: 10 * 1024 * 1024 });
-	const data = JSON.parse(stdout.trim().split("\n")[0] || "{}");
+	try {
+		const { stdout } = await execFileAsync(ytdlp, args, { maxBuffer: 25 * 1024 * 1024 });
+		const data = JSON.parse(stdout.trim().split("\n")[0] || "{}");
 
-	return {
-		title: data.title || "Downloaded Video",
-		duration: typeof data.duration === "number" ? data.duration : undefined,
-		thumbnail: data.thumbnail || data.thumbnails?.[0]?.url,
-		uploader: data.uploader || data.channel,
-		webpageUrl: data.webpage_url || url,
-	};
+		return {
+			title: data.title || "Downloaded Video",
+			duration: typeof data.duration === "number" ? data.duration : undefined,
+			thumbnail: data.thumbnail || data.thumbnails?.[0]?.url,
+			uploader: data.uploader || data.channel,
+			webpageUrl: data.webpage_url || url,
+		};
+	} catch (err: any) {
+		console.warn("Get video info note:", err?.message || err);
+		return {
+			title: "Online Video",
+			webpageUrl: url,
+		};
+	}
+}
+
+export interface DownloadProgressInfo {
+	percent: number;
+	speed?: string;
+	eta?: string;
+	stage: "initializing" | "downloading" | "processing" | "completed";
+	message?: string;
 }
 
 /**
- * 1. Download video from any URL
+ * 1. Download video from any URL with progress streaming
  */
 export async function downloadVideoFromLink(
 	url: string,
 	outputDirectory: string,
+	onProgress?: (info: DownloadProgressInfo) => void,
 ): Promise<{ filePath: string; title: string }> {
 	const ytdlp = resolveExecutable(YTDLP_CANDIDATES, "yt-dlp");
 	const ffmpeg = resolveExecutable(FFMPEG_CANDIDATES, "ffmpeg");
-	const outputTemplate = path.join(outputDirectory, "%(title).50s-%(id)s.%(ext)s");
+	const outputTemplate = path.join(outputDirectory, "%(title).50s-%(id)s.%(ext)s").replace(/\\/g, "/");
 
 	const args = [
 		url,
 		"--no-playlist",
 		"--no-warnings",
+		"--newline",
+		"--socket-timeout",
+		"30",
+		"--retries",
+		"5",
+		"--fragment-retries",
+		"5",
+		"--extractor-args",
+		"youtube:player_client=default,ios,mweb",
 		"-f",
-		"b[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bv*+ba/best",
+		"bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080][ext=mp4]/best[height<=1080]/best",
 		"--merge-output-format",
 		"mp4",
 		"-o",
 		outputTemplate,
 	];
 
+	args.push("--newline");
+
 	if (ffmpeg && fs.existsSync(ffmpeg)) {
 		args.push("--ffmpeg-location", path.dirname(ffmpeg));
 	}
 
-	try {
-		await execFileAsync(ytdlp, args, { maxBuffer: 30 * 1024 * 1024 });
-	} catch (err: any) {
-		console.warn("Media download run note:", err?.message || err);
-	}
+	let ytdlpError = "";
+	await new Promise<void>((resolve, reject) => {
+		onProgress?.({
+			percent: 0,
+			stage: "initializing",
+			message: "Connecting to media stream...",
+		});
+
+		const child = spawn(ytdlp, args, {
+			cwd: outputDirectory,
+			shell: false,
+		});
+
+		let maxPercent = 0;
+		let downloadPhase: "video" | "audio" | "merging" = "video";
+		let streamsSeen = 0;
+
+		const handleOutput = (data: Buffer | string) => {
+			const str = data.toString();
+
+			if (str.includes("[Merger]") || str.includes("Merging formats")) {
+				downloadPhase = "merging";
+				maxPercent = Math.max(maxPercent, 94);
+				onProgress?.({
+					percent: maxPercent,
+					stage: "processing",
+					message: "Merging video and audio streams...",
+				});
+				return;
+			}
+
+			if (str.includes("[download] Destination:")) {
+				streamsSeen++;
+				if (streamsSeen > 1 || str.includes(".m4a") || str.includes(".f140") || str.includes(".mp3")) {
+					downloadPhase = "audio";
+				}
+			}
+
+			// Parse percentage matches
+			const matches = [...str.matchAll(/(\d+(?:\.\d+)?)%/g)];
+			if (matches.length > 0) {
+				const lastMatch = matches[matches.length - 1];
+				const rawPercent = Math.min(100, Math.max(0, parseFloat(lastMatch[1])));
+				const speedMatch = str.match(/at\s+([^\s]+(?:B|iB)\/s)/i);
+				const etaMatch = str.match(/ETA\s+([0-9:]+)/i);
+
+				let calculatedPercent = rawPercent;
+				if (downloadPhase === "video") {
+					// Video stream occupies 0% - 75%
+					calculatedPercent = rawPercent * 0.75;
+				} else if (downloadPhase === "audio") {
+					// Audio stream occupies 75% - 93%
+					calculatedPercent = 75 + rawPercent * 0.18;
+				} else {
+					calculatedPercent = 94 + (rawPercent / 100) * 4;
+				}
+
+				// Strictly monotonic: never decrease
+				maxPercent = Math.min(99, Math.max(maxPercent, calculatedPercent));
+
+				const phaseText =
+					downloadPhase === "video"
+						? "Downloading video stream"
+						: downloadPhase === "audio"
+							? "Downloading audio stream"
+							: "Processing media";
+
+				onProgress?.({
+					percent: Number(maxPercent.toFixed(1)),
+					speed: speedMatch?.[1],
+					eta: etaMatch?.[1],
+					stage: "downloading",
+					message: `${phaseText} (${maxPercent.toFixed(0)}%)...`,
+				});
+			}
+		};
+
+		child.stdout?.on("data", handleOutput);
+		child.stderr?.on("data", (data) => {
+			const str = data.toString();
+			ytdlpError += str;
+			if (str.includes("%")) {
+				handleOutput(data);
+			}
+		});
+
+		child.on("error", (err) => {
+			reject(err);
+		});
+
+		child.on("close", () => {
+			resolve();
+		});
+	});
 
 	// Read output directory to find the generated media file
 	const mediaExtensions = [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3"];
@@ -144,6 +289,22 @@ export async function downloadVideoFromLink(
 		.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
 
 	if (validFiles.length === 0) {
+		if (ytdlpError) {
+			if (ytdlpError.includes("429") || ytdlpError.includes("Too Many Requests")) {
+				throw new Error("YouTube is temporarily rate-limiting requests (HTTP 429). Please wait a moment or try another video.");
+			}
+			if (ytdlpError.includes("Private video") || ytdlpError.includes("Sign in")) {
+				throw new Error("This video is private, restricted, or requires login.");
+			}
+			if (ytdlpError.includes("unreachable network") || ytdlpError.includes("getaddrinfo failed")) {
+				throw new Error("Network connection error. Please check your internet connection.");
+			}
+			const lines = ytdlpError.split("\n").map((l) => l.trim()).filter(Boolean);
+			const errorLine = lines.find((l) => l.includes("ERROR:")) || lines[lines.length - 1];
+			if (errorLine) {
+				throw new Error(errorLine.replace(/^ERROR:\s*/, ""));
+			}
+		}
 		throw new Error("Unable to download media from the specified link. Please verify the URL.");
 	}
 
@@ -151,6 +312,11 @@ export async function downloadVideoFromLink(
 
 	// If output is not mp4, remux or transcode to mp4 for browser playback
 	if (path.extname(targetPath).toLowerCase() !== ".mp4") {
+		onProgress?.({
+			percent: 95,
+			stage: "processing",
+			message: "Converting to MP4 for browser compatibility...",
+		});
 		const mp4Path = path.join(outputDirectory, `${path.basename(targetPath, path.extname(targetPath))}.mp4`);
 		try {
 			await execFileAsync(ffmpeg, ["-i", targetPath, "-c:v", "libx264", "-c:a", "aac", "-y", mp4Path]);
@@ -161,6 +327,12 @@ export async function downloadVideoFromLink(
 			console.warn("Remuxing to mp4 fallback:", convErr);
 		}
 	}
+
+	onProgress?.({
+		percent: 100,
+		stage: "completed",
+		message: "Download complete!",
+	});
 
 	const baseName = path.basename(targetPath, path.extname(targetPath));
 	const title = baseName.replace(/-[a-zA-Z0-9_-]{11}$/, "").trim() || baseName;

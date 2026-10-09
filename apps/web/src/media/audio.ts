@@ -684,8 +684,12 @@ export async function createTimelineAudioBuffer({
 			bufferToMix = await enhanceAudioBuffer({
 				audioBuffer: bufferToMix,
 				config: {
-					noiseReduction: params.noiseReduction !== false,
-					vocalBoost: params.vocalBoost !== false,
+					noiseReduction:
+						params.noiseReduction === true ||
+						(params.enhanceAudio === true && params.noiseReduction !== false),
+					vocalBoost:
+						params.vocalBoost === true ||
+						(params.enhanceAudio === true && params.vocalBoost !== false),
 				},
 			});
 		}

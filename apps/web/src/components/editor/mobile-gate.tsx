@@ -18,7 +18,20 @@ export function MobileGate({ children }: MobileGateProps) {
 	const [show, setShow] = useState<boolean | null>(null);
 
 	useEffect(() => {
-		const isMobile = window.innerWidth < 1024;
+		// In Tauri / desktop app environment, never show mobile gate
+		const isDesktopApp =
+			typeof window !== "undefined" &&
+			("__TAURI_INTERNALS__" in window ||
+				"__TAURI__" in window ||
+				window.navigator.userAgent.includes("Tauri"));
+
+		if (isDesktopApp) {
+			setShow(false);
+			return;
+		}
+
+		// Only gate genuine mobile phone screens (< 768px) rather than 1024px which catches scaled laptops
+		const isMobile = window.innerWidth < 768;
 		const acknowledged = localStorage.getItem(STORAGE_KEY) === "true";
 		setShow(isMobile && !acknowledged);
 	}, []);

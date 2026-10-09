@@ -607,6 +607,14 @@ export default function ProjectsPage() {
 										color: "bg-orange-500/10 text-orange-500",
 										action: () => setIsTtsOpen(true),
 									},
+									{
+										id: "player",
+										title: "Video player",
+										icon: Play,
+										badge: "VIEWER",
+										color: "bg-sky-500/10 text-sky-500",
+										action: () => router.push("/player"),
+									},
 								].map((tool) => {
 									const Icon = tool.icon;
 									return (
@@ -782,6 +790,7 @@ function ProjectItem({
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
 	const editor = useEditor();
+	const router = useRouter();
 	const durationLabel = formatProjectDuration({ duration: project.duration });
 	const isGridView = viewMode === "grid";
 
@@ -812,6 +821,10 @@ function ProjectItem({
 		setProjectSelected({ projectId: project.id, isSelected: checked });
 	};
 
+	const handleOpenEditor = () => {
+		router.push(`/editor/${project.id}`);
+	};
+
 	return (
 		<>
 			<ContextMenu>
@@ -819,14 +832,15 @@ function ProjectItem({
 					<div className="group relative">
 						{isGridView ? (
 							<div
-								className={`rounded-lg overflow-hidden bg-card border transition-all duration-200 ${
+								onClick={handleOpenEditor}
+								className={`rounded-lg overflow-hidden bg-card border transition-all duration-200 cursor-pointer ${
 									isSelected
 										? "border-orange-500 ring-2 ring-orange-500/20"
 										: "border-border hover:border-orange-500/40 hover:shadow-xs"
 								}`}
 							>
 								{/* Thumbnail */}
-								<Link href={`/editor/${project.id}`} className="block relative aspect-video bg-muted/40 overflow-hidden">
+								<div className="block relative aspect-video bg-muted/40 overflow-hidden">
 									{project.thumbnail ? (
 										<Image
 											src={project.thumbnail}
@@ -859,7 +873,7 @@ function ProjectItem({
 											{durationLabel}
 										</div>
 									)}
-								</Link>
+								</div>
 
 								{/* Checkbox */}
 								<Checkbox
@@ -880,14 +894,14 @@ function ProjectItem({
 
 								{/* Details */}
 								<div className="p-3 flex items-center justify-between gap-2">
-									<Link href={`/editor/${project.id}`} className="flex flex-col min-w-0 flex-1">
+									<div className="flex flex-col min-w-0 flex-1">
 										<h3 className="text-xs font-semibold text-foreground truncate group-hover:text-orange-500 transition-colors">
 											{project.name}
 										</h3>
 										<span className="text-[10px] text-muted-foreground">
 											{formatDate({ date: project.createdAt })}
 										</span>
-									</Link>
+									</div>
 
 									<DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
 										<DropdownMenuTrigger asChild>
@@ -924,7 +938,8 @@ function ProjectItem({
 						) : (
 							/* List Row View */
 							<div
-								className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
+								onClick={handleOpenEditor}
+								className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer ${
 									isSelected
 										? "bg-orange-500/10 border-orange-500"
 										: "bg-card border-border hover:border-orange-500/30"
@@ -981,6 +996,7 @@ function ProjectItem({
 												variant="ghost"
 												size="icon"
 												className="size-7 rounded text-muted-foreground hover:text-foreground"
+												onClick={(e) => e.stopPropagation()}
 											>
 												<MoreVertical className="size-3.5" />
 											</Button>

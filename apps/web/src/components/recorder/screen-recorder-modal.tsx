@@ -26,6 +26,8 @@ import {
 	Sparkles,
 	Circle,
 	Check,
+	Minimize2,
+	Maximize2,
 } from "lucide-react";
 import { useEditor } from "@/editor/use-editor";
 import { processMediaAssets } from "@/media/processing";
@@ -73,6 +75,7 @@ export function ScreenRecorderModal({
 	>("idle");
 	const [countdown, setCountdown] = useState(3);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
+	const [isMinimized, setIsMinimized] = useState(false);
 
 	// Recording refs
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -92,7 +95,7 @@ export function ScreenRecorderModal({
 	});
 	const animFrameRef = useRef<number | null>(null);
 
-	// Initialize video elements for offscreen rendering
+	// Initialize video elements for rendering
 	useEffect(() => {
 		if (!screenVideoRef.current) {
 			const video = document.createElement("video");
@@ -128,6 +131,7 @@ export function ScreenRecorderModal({
 			if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
 			setStatus("idle");
 			setElapsedSeconds(0);
+			setIsMinimized(false);
 			setRecordedBlob(null);
 			if (recordedUrl) {
 				URL.revokeObjectURL(recordedUrl);
@@ -143,6 +147,7 @@ export function ScreenRecorderModal({
 		setScreenStream(null);
 		setCameraStream(null);
 		setMicStream(null);
+		setIsMinimized(false);
 	};
 
 	// Start Screen & Camera setup
@@ -158,7 +163,14 @@ export function ScreenRecorderModal({
 
 			if (screenVideoRef.current) {
 				screenVideoRef.current.srcObject = screen;
-				await screenVideoRef.current.play();
+				screenVideoRef.current.onloadedmetadata = () => {
+					screenVideoRef.current?.play().catch(() => {});
+				};
+				try {
+					await screenVideoRef.current.play();
+				} catch (e) {
+					console.warn("Screen video play error:", e);
+				}
 			}
 			setScreenStream(screen);
 
@@ -247,7 +259,11 @@ export function ScreenRecorderModal({
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 			// Draw screen video with zoom & pan
-			if (screenVid.readyState >= 2 && screenVid.videoWidth > 0) {
+			const isScreenActive = screenVid && (screenVid.videoWidth > 0 || screenVid.readyState >= 1);
+			if (isScreenActive && screenVid.videoWidth > 0) {
+				if (screenVid.paused) {
+					screenVid.play().catch(() => {});
+				}
 				const vidW = screenVid.videoWidth;
 				const vidH = screenVid.videoHeight;
 
@@ -272,6 +288,16 @@ export function ScreenRecorderModal({
 					canvas.width,
 					canvas.height,
 				);
+			} else {
+				ctx.fillStyle = "#111217";
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				ctx.fillStyle = "#f97316";
+				ctx.font = "bold 26px system-ui, sans-serif";
+				ctx.textAlign = "center";
+				ctx.fillText("Screen Stream Active", canvas.width / 2, canvas.height / 2 - 16);
+				ctx.fillStyle = "#a1a1aa";
+				ctx.font = "16px system-ui, sans-serif";
+				ctx.fillText("Capturing display... Minimize AmberCut to record any app or window", canvas.width / 2, canvas.height / 2 + 20);
 			}
 
 			// Draw Camera Picture-in-Picture (PiP)
@@ -429,7 +455,8 @@ export function ScreenRecorderModal({
 		mediaRecorderRef.current = recorder;
 		setStatus("recording");
 		setElapsedSeconds(0);
-		toast.success("Recording started! Press Stop or close when done.");
+		setIsMinimized(true);
+		toast.success("Recording started! Collapsed to floating bar so you can capture your screen.");
 	};
 
 	const pauseRecording = () => {
@@ -459,6 +486,7 @@ export function ScreenRecorderModal({
 		) {
 			mediaRecorderRef.current.stop();
 		}
+		setIsMinimized(false);
 	};
 
 	// Open directly in the AmberCut Video Editor
@@ -524,34 +552,124 @@ export function ScreenRecorderModal({
 	};
 
 	return (
-		<Dialog open={isOpen} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-4xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
-				{/* Top Header Bar */}
-				<div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
-					<div className="flex items-center gap-3">
-						<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
-							<Monitor className="size-4" />
-						</div>
-						<div>
-							<DialogTitle className="text-base font-semibold flex items-center gap-2">
-								Screen & Launch Video Studio
-								<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-medium text-[11px] rounded-md">
-									PiP & Zoom
-								</Badge>
-							</DialogTitle>
-							<DialogDescription className="text-xs text-muted-foreground">
-								Record full screen or windows with live webcam picture-in-picture & smooth zoom
-							</DialogDescription>
-						</div>
+		<>
+			{/* DOM-mounted video tags for reliable Chromium / WebView2 video frame rendering */}
+			<video
+				ref={screenVideoRef}
+				autoPlay
+				playsInline
+				muted
+				style={{
+					position: "fixed",
+					top: -9999,
+					left: -9999,
+					width: 1,
+					height: 1,
+					opacity: 0,
+					pointerEvents: "none",
+				}}
+			/>
+			<video
+				ref={cameraVideoRef}
+				autoPlay
+				playsInline
+				muted
+				style={{
+					position: "fixed",
+					top: -9999,
+					left: -9999,
+					width: 1,
+					height: 1,
+					opacity: 0,
+					pointerEvents: "none",
+				}}
+			/>
+
+			{/* Floating Mini Recorder Widget when recording is active and minimized */}
+			{isMinimized && (status === "recording" || status === "paused" || status === "countdown") && (
+				<div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-zinc-950/95 text-white backdrop-blur-2xl border border-orange-500/40 shadow-2xl animate-in slide-in-from-bottom-5">
+					<div className="flex items-center gap-2 font-mono text-xs font-bold text-red-500">
+						<span className="size-2.5 rounded-full bg-red-500 animate-ping" />
+						<span>REC {formatTime(elapsedSeconds)}</span>
 					</div>
 
-					{status === "recording" && (
-						<div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-500 animate-pulse font-mono text-xs font-bold">
-							<div className="size-2 rounded-full bg-red-500" />
-							<span>REC {formatTime(elapsedSeconds)}</span>
-						</div>
-					)}
+					<div className="h-4 w-px bg-white/20" />
+
+					<Button
+						size="icon"
+						variant="ghost"
+						onClick={status === "recording" ? pauseRecording : resumeRecording}
+						className="size-8 rounded-lg hover:bg-white/10 text-white cursor-pointer"
+						title={status === "recording" ? "Pause Recording" : "Resume Recording"}
+					>
+						{status === "recording" ? (
+							<Pause className="size-4" />
+						) : (
+							<Play className="size-4 text-emerald-400" />
+						)}
+					</Button>
+
+					<Button
+						size="sm"
+						onClick={stopRecording}
+						className="h-8 px-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-xs gap-1.5 shadow-md cursor-pointer"
+					>
+						<Square className="size-3.5 fill-current" />
+						<span>Stop</span>
+					</Button>
+
+					<Button
+						size="icon"
+						variant="ghost"
+						onClick={() => setIsMinimized(false)}
+						className="size-8 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer"
+						title="Expand Studio Preview"
+					>
+						<Maximize2 className="size-4" />
+					</Button>
 				</div>
+			)}
+
+			<Dialog open={isOpen && !isMinimized} onOpenChange={onOpenChange}>
+				<DialogContent className="max-w-4xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
+					{/* Top Header Bar */}
+					<div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+						<div className="flex items-center gap-3">
+							<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
+								<Monitor className="size-4" />
+							</div>
+							<div>
+								<DialogTitle className="text-base font-semibold flex items-center gap-2">
+									Studio Screen Recorder
+									<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-medium text-[11px] rounded-md">
+										PiP & Zoom
+									</Badge>
+								</DialogTitle>
+								<DialogDescription className="text-xs text-muted-foreground">
+									Record full screen or windows with live webcam picture-in-picture & smooth zoom
+								</DialogDescription>
+							</div>
+						</div>
+
+						{(status === "recording" || status === "paused") && (
+							<div className="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setIsMinimized(true)}
+									className="h-7 text-xs px-2.5 rounded-lg border-border text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer"
+									title="Minimize to floating bar so you can capture your desktop"
+								>
+									<Minimize2 className="size-3.5 text-orange-500" />
+									<span>Minimize Bar</span>
+								</Button>
+								<div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-500 animate-pulse font-mono text-xs font-bold">
+									<div className="size-2 rounded-full bg-red-500" />
+									<span>REC {formatTime(elapsedSeconds)}</span>
+								</div>
+							</div>
+						)}
+					</div>
 
 				{/* Main Content Area */}
 				<div className="p-5 flex flex-col gap-5">
@@ -866,5 +984,6 @@ export function ScreenRecorderModal({
 				</div>
 			</DialogContent>
 		</Dialog>
+	</>
 	);
 }

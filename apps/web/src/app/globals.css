@@ -342,7 +342,22 @@
   letter-spacing: -0.02em;
 }
 
-/* Sidebar interactive elements cursor pointer */
+/* Interactive elements cursor pointer (buttons, modals, dialogs, sidebars) */
+button,
+[role="button"],
+[type="button"],
+[type="submit"],
+[type="reset"],
+.cursor-pointer {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+[disabled] {
+  cursor: not-allowed;
+}
+
 aside button,
 aside a,
 aside [role="button"],
@@ -350,7 +365,9 @@ aside .sidebar-item,
 .panel button,
 .panel [role="button"],
 .panel [draggable="true"],
-.panel-item {
+.panel-item,
+[role="dialog"] button,
+[role="dialog"] [role="button"] {
   cursor: pointer;
 }
 
