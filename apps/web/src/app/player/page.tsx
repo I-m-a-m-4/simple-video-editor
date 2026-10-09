@@ -491,7 +491,7 @@ export default function VideoPlayerPage() {
 										<Volume2 className="size-4" />
 									)}
 								</Button>
-								<div className="w-16">
+								<div className="hidden sm:block w-16">
 									<Slider
 										value={[isMuted ? 0 : volume]}
 										min={0}

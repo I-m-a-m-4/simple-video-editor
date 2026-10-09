@@ -380,15 +380,15 @@ export default function ProjectsPage() {
 				{/* Main Content Dashboard */}
 				<div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
 					{/* Top Header Bar with Theme Switcher */}
-					<header className="sticky top-0 z-20 px-6 py-3 bg-background/90 backdrop-blur-md border-b border-border flex items-center justify-between gap-4">
-						<div className="flex items-center gap-2 text-xs">
+					<header className="sticky top-0 z-20 px-3 sm:px-6 py-3 bg-background/90 backdrop-blur-md border-b border-border flex items-center justify-between gap-2 sm:gap-4">
+						<div className="flex items-center gap-2 text-xs shrink-0">
 							<span className="font-semibold text-foreground">Home</span>
 							<span className="text-muted-foreground/40">/</span>
 							<span className="text-muted-foreground">Projects</span>
 						</div>
 
-						<div className="flex items-center gap-3">
-							<div className="relative w-56 md:w-72">
+						<div className="flex items-center gap-2 sm:gap-3">
+							<div className="relative w-32 sm:w-56 md:w-72">
 								<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
 								<Input
 									placeholder="Search projects..."

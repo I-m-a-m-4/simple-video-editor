@@ -23,6 +23,10 @@ import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileEditorDock } from "@/components/editor/mobile-dock";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useAssetsPanelStore, type Tab } from "@/components/editor/panels/assets/assets-panel-store";
 import {
 	createPreviewOverlayControl,
 	isPreviewOverlayVisible,
@@ -128,6 +132,65 @@ function EditorLayout() {
 			),
 		[overlaySource.definitions, overlays],
 	);
+
+	const isMobile = useIsMobile();
+	const [activeMobileSheet, setActiveMobileSheet] = useState<"assets" | "properties" | null>(null);
+
+	if (isMobile) {
+		return (
+			<div className="flex flex-col size-full overflow-hidden bg-background relative">
+				{/* 1. Mobile Video Preview: Full width on top */}
+				<div className="w-full h-[38vh] min-h-[220px] max-h-[46vh] border-b border-border/70 bg-black/60 flex flex-col min-w-0 overflow-hidden shrink-0 shadow-inner">
+					<PreviewPanel
+						overlayControls={overlayControls}
+						overlayInstances={overlaySource.instances}
+						onOverlayVisibilityChange={setOverlayVisibility}
+					/>
+				</div>
+
+				{/* 2. Mobile Timeline: Full width in middle */}
+				<div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col pb-16 pt-0.5 px-1">
+					<Timeline />
+				</div>
+
+				{/* 3. Mobile Navigation Dock & Action Bar */}
+				<MobileEditorDock
+					activeSheet={activeMobileSheet}
+					onOpenSheet={(sheet, tab) => {
+						if (tab) {
+							useAssetsPanelStore.getState().setActiveTab(tab);
+						}
+						setActiveMobileSheet(sheet);
+					}}
+					onCloseSheet={() => setActiveMobileSheet(null)}
+				/>
+
+				{/* 4. Mobile Bottom Sheet Drawer for Collapsed Panels */}
+				<Sheet
+					open={!!activeMobileSheet}
+					onOpenChange={(open) => {
+						if (!open) setActiveMobileSheet(null);
+					}}
+				>
+					<SheetContent
+						side="bottom"
+						className="h-[80vh] max-h-[88vh] p-0 rounded-t-2xl border-t border-border bg-background flex flex-col overflow-hidden z-250 shadow-2xl"
+					>
+						<div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-muted/40 shrink-0">
+							<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+								{activeMobileSheet === "assets" && "Media, Text & AI Assistant"}
+								{activeMobileSheet === "properties" && "Properties & Audio Enhancer"}
+							</span>
+						</div>
+						<div className="flex-1 min-h-0 overflow-hidden">
+							{activeMobileSheet === "assets" && <AssetsPanel />}
+							{activeMobileSheet === "properties" && <PropertiesPanel />}
+						</div>
+					</SheetContent>
+				</Sheet>
+			</div>
+		);
+	}
 
 	return (
 		<ResizablePanelGroup

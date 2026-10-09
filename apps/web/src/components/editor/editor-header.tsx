@@ -30,14 +30,16 @@ import { cn } from "@/utils/ui";
 
 export function EditorHeader() {
 	return (
-		<header className="bg-background flex h-[3.4rem] items-center justify-between px-3 pt-0.5">
-			<div className="flex items-center gap-1">
+		<header className="bg-background flex h-[3.4rem] items-center justify-between px-2 sm:px-3 pt-0.5 border-b border-border/40">
+			<div className="flex items-center gap-1 min-w-0">
 				<ProjectDropdown />
 				<EditableProjectName />
 			</div>
-			<nav className="flex items-center gap-2">
-				<ProButton />
-				<FeedbackPopover />
+			<nav className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+				<div className="hidden md:flex items-center gap-1.5">
+					<ProButton />
+					<FeedbackPopover />
+				</div>
 				<ExportButton />
 				<ThemeToggle />
 			</nav>
@@ -248,7 +250,7 @@ function EditableProjectName() {
 			onKeyDown={handleKeyDown}
 			style={{ fieldSizing: "content" }}
 			className={cn(
-				"text-[0.9rem] h-8 px-2 py-1 rounded-sm bg-transparent outline-none cursor-pointer hover:bg-accent hover:text-accent-foreground",
+				"text-[0.9rem] h-8 px-2 py-1 rounded-sm bg-transparent outline-none cursor-pointer hover:bg-accent hover:text-accent-foreground max-w-[110px] sm:max-w-[200px] md:max-w-xs truncate",
 				isEditing && "ring-1 ring-ring cursor-text hover:bg-transparent",
 			)}
 		/>
