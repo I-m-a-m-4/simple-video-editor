@@ -14,8 +14,10 @@ export type PanelId = keyof PanelSizes;
 
 interface PanelState {
 	panels: PanelSizes;
+	layoutMode: "auto" | "mobile" | "desktop";
 	setPanel: (args: { panel: PanelId; size: number }) => void;
 	setPanels: (sizes: Partial<PanelSizes>) => void;
+	setLayoutMode: (mode: "auto" | "mobile" | "desktop") => void;
 	resetPanels: () => void;
 }
 
@@ -23,6 +25,7 @@ export const usePanelStore = create<PanelState>()(
 	persist(
 		(set) => ({
 			...PANEL_CONFIG,
+			layoutMode: "auto",
 			setPanel: ({ panel, size }) =>
 				set((state) => ({
 					panels: {
@@ -37,7 +40,11 @@ export const usePanelStore = create<PanelState>()(
 						...sizes,
 					},
 				})),
-			resetPanels: () => set({ ...PANEL_CONFIG }),
+			setLayoutMode: (mode) =>
+				set(() => ({
+					layoutMode: mode,
+				})),
+			resetPanels: () => set({ ...PANEL_CONFIG, layoutMode: "auto" }),
 		}),
 		{
 			name: "panel-sizes",

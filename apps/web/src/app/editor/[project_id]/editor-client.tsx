@@ -133,7 +133,9 @@ function EditorLayout() {
 		[overlaySource.definitions, overlays],
 	);
 
-	const isMobile = useIsMobile();
+	const isMobileDevice = useIsMobile(1024);
+	const layoutMode = usePanelStore((s) => s.layoutMode ?? "auto");
+	const isMobile = layoutMode === "mobile" || (layoutMode === "auto" && isMobileDevice);
 	const [activeMobileSheet, setActiveMobileSheet] = useState<"assets" | "properties" | null>(null);
 
 	if (isMobile) {

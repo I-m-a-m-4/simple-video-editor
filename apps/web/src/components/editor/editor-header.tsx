@@ -27,6 +27,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
+import { Smartphone } from "lucide-react";
+import { usePanelStore } from "@/editor/panel-store";
 
 export function EditorHeader() {
 	return (
@@ -55,6 +57,7 @@ function ProjectDropdown() {
 	const router = useRouter();
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
+	const { layoutMode, setLayoutMode } = usePanelStore();
 
 	const handleExit = async () => {
 		if (isExiting) return;
@@ -145,6 +148,17 @@ function ProjectDropdown() {
 						<Link href="/player" className="cursor-pointer">
 							Video Player Mode
 						</Link>
+					</DropdownMenuItem>
+
+					<DropdownMenuItem
+						onClick={() => {
+							const next = layoutMode === "mobile" ? "desktop" : "mobile";
+							setLayoutMode(next);
+							toast.success(`Switched to ${next === "mobile" ? "Mobile" : "Desktop"} layout`);
+						}}
+						icon={<Smartphone className="size-4 text-orange-500" />}
+					>
+						{layoutMode === "mobile" ? "Switch to Desktop Layout" : "Switch to Mobile Layout"}
 					</DropdownMenuItem>
 
 					<DropdownMenuSeparator />
