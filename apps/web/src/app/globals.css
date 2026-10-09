@@ -264,6 +264,10 @@
   }
 }
 
+@utility safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 @utility scrollbar-x-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;

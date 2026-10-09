@@ -39,15 +39,6 @@ export default function RootLayout({
 					href="https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&display=swap"
 				/>
 				<BotIdClient protect={protectedRoutes} />
-				{process.env.NODE_ENV === "development" && (
-					<>
-						<Script
-							src="//unpkg.com/react-scan/dist/auto.global.js"
-							crossOrigin="anonymous"
-							strategy="beforeInteractive"
-						/>
-					</>
-				)}
 			</head>
 			<body className={`${siteFont.variable} ${siteFont.className} font-sans antialiased`}>
 				<ThemeProvider

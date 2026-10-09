@@ -52,6 +52,7 @@ import { GraphEditorPopover } from "./graph-editor/popover";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useGraphEditorController } from "./graph-editor/use-controller";
 import { Info, Keyboard } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export function TimelineToolbar({
 	zoomLevel,
@@ -62,6 +63,7 @@ export function TimelineToolbar({
 	minZoom: number;
 	setZoomLevel: ({ zoom }: { zoom: number }) => void;
 }) {
+	const isMobile = useIsMobile();
 	const handleZoom = ({ direction }: { direction: "in" | "out" }) => {
 		const newZoomLevel =
 			direction === "in"
@@ -71,24 +73,25 @@ export function TimelineToolbar({
 	};
 
 	return (
-		<ScrollArea className="scrollbar-hidden">
-			<div className="flex h-10 items-center justify-between border-b px-2 py-1">
-				<ToolbarLeftSection />
+		<div className="w-full overflow-x-auto overflow-y-hidden scrollbar-hidden touch-pan-x bg-background/95 border-b select-none">
+			<div className="flex h-10 items-center justify-between gap-2.5 px-2 py-1 min-w-max w-full">
+				<ToolbarLeftSection isMobile={isMobile} />
 
-				<SceneSelector />
+				<SceneSelector isMobile={isMobile} />
 
 				<ToolbarRightSection
+					isMobile={isMobile}
 					zoomLevel={zoomLevel}
 					minZoom={minZoom}
 					onZoomChange={(zoom) => setZoomLevel({ zoom })}
 					onZoom={handleZoom}
 				/>
 			</div>
-		</ScrollArea>
+		</div>
 	);
 }
 
-function ToolbarLeftSection() {
+function ToolbarLeftSection({ isMobile }: { isMobile?: boolean }) {
 	const editor = useEditor();
 	const mediaAssets = useEditor((currentEditor) =>
 		currentEditor.media.getAssets(),
@@ -143,7 +146,7 @@ function ToolbarLeftSection() {
 	};
 
 	return (
-		<div className="flex items-center gap-1">
+		<div className="flex items-center gap-1 shrink-0">
 			<TooltipProvider delayDuration={100}>
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={ScissorIcon} />}
@@ -186,12 +189,14 @@ function ToolbarLeftSection() {
 					}
 				/>
 
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={SnowIcon} />}
-					tooltip="Freeze frame (coming soon)"
-					disabled={true}
-					onClick={({ event: _event }) => {}}
-				/>
+				{!isMobile && (
+					<ToolbarButton
+						icon={<HugeiconsIcon icon={SnowIcon} />}
+						tooltip="Freeze frame (coming soon)"
+						disabled={true}
+						onClick={({ event: _event }) => {}}
+					/>
+				)}
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Delete02Icon} />}
@@ -258,14 +263,16 @@ function ToolbarLeftSection() {
 	);
 }
 
-function SceneSelector() {
+function SceneSelector({ isMobile }: { isMobile?: boolean }) {
 	const editor = useEditor();
 	const currentScene = editor.scenes.getActiveScene();
 
 	return (
-		<div>
+		<div className="shrink-0">
 			<SplitButton className="border-foreground/10 border">
-				<SplitButtonLeft>{currentScene?.name || "No Scene"}</SplitButtonLeft>
+				<SplitButtonLeft className={isMobile ? "max-w-28 truncate text-xs px-2" : "text-xs"}>
+					{currentScene?.name || "No Scene"}
+				</SplitButtonLeft>
 				<SplitButtonSeparator />
 				<ScenesView>
 					<SplitButtonRight onClick={() => {}}>
@@ -278,11 +285,13 @@ function SceneSelector() {
 }
 
 function ToolbarRightSection({
+	isMobile,
 	zoomLevel,
 	minZoom,
 	onZoomChange,
 	onZoom,
 }: {
+	isMobile?: boolean;
 	zoomLevel: number;
 	minZoom: number;
 	onZoomChange: (zoom: number) => void;
@@ -294,7 +303,7 @@ function ToolbarRightSection({
 	const toggleRippleEditing = useTimelineStore((s) => s.toggleRippleEditing);
 
 	return (
-		<div className="flex items-center gap-1">
+		<div className="flex items-center gap-1 shrink-0">
 			<TooltipProvider delayDuration={100}>
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={MagnetIcon} />}
@@ -321,16 +330,18 @@ function ToolbarRightSection({
 						onClick={() => onZoom({ direction: "out" })}
 					/>
 				</TooltipProvider>
-				<Slider
-					className="w-28"
-					value={[zoomToSlider({ zoomLevel, minZoom })]}
-					onValueChange={(values) =>
-						onZoomChange(sliderToZoom({ sliderPosition: values[0], minZoom }))
-					}
-					min={0}
-					max={1}
-					step={0.005}
-				/>
+				{!isMobile && (
+					<Slider
+						className="w-28"
+						value={[zoomToSlider({ zoomLevel, minZoom })]}
+						onValueChange={(values) =>
+							onZoomChange(sliderToZoom({ sliderPosition: values[0], minZoom }))
+						}
+						min={0}
+						max={1}
+						step={0.005}
+					/>
+				)}
 				<TooltipProvider delayDuration={100}>
 					<ToolbarButton
 						icon={<HugeiconsIcon icon={SearchAddIcon} />}
@@ -340,10 +351,12 @@ function ToolbarRightSection({
 				</TooltipProvider>
 			</div>
 
-			<div className="bg-border mx-1 h-6 w-px" />
-
-			{/* Timeline Keyboard Shortcuts Quick Info Popover */}
-			<ToolbarShortcutsInfo />
+			{!isMobile && (
+				<>
+					<div className="bg-border mx-1 h-6 w-px" />
+					<ToolbarShortcutsInfo />
+				</>
+			)}
 		</div>
 	);
 }
@@ -478,7 +491,7 @@ function ToolbarButton({
 			disabled={disabled}
 			onClick={onClick ? (event) => onClick({ event }) : undefined}
 			className={cn(
-				"rounded-sm",
+				"rounded-sm shrink-0 touch-manipulation",
 				disabled ? "cursor-not-allowed opacity-50" : "",
 			)}
 		>
