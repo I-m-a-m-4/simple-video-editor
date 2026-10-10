@@ -1,8 +1,9 @@
 import type { TProject, TProjectMetadata } from "@/project/types";
 import { getProjectDurationFromScenes } from "@/timeline/scenes";
 import type { MediaAsset } from "@/media/types";
-import { IndexedDBAdapter } from "./indexeddb-adapter";
+import { IndexedDBAdapter, deleteDatabase } from "./indexeddb-adapter";
 import { OPFSAdapter } from "./opfs-adapter";
+import { saveProjectToCloud, loadProjectFromCloud } from "@/services/firebase";
 import {
 	type StorageCapacityCheckResult,
 	StorageQuotaExceededError,
@@ -99,7 +100,16 @@ class StorageService {
 
 		const mediaAssetsAdapter = new OPFSAdapter(`media-files-${projectId}`);
 
-		return { mediaMetadataAdapter, mediaAssetsAdapter };
+		const mediaFallbackAdapter = new IndexedDBAdapter<{
+			id: string;
+			file: Blob | File;
+		}>({
+			dbName: `${this.config.mediaDb}-files-${projectId}`,
+			storeName: "files",
+			version: this.config.version,
+		});
+
+		return { mediaMetadataAdapter, mediaAssetsAdapter, mediaFallbackAdapter };
 	}
 
 	async canStoreFile({
@@ -165,6 +175,13 @@ class StorageService {
 			key: project.metadata.id,
 			value: serializedProject,
 		});
+
+		// Cloud backup to Firebase Firestore
+		try {
+			void saveProjectToCloud(serializedProject);
+		} catch (cloudErr) {
+			console.warn("[storage] Cloud sync error:", cloudErr);
+		}
 	}
 
 	async loadProject({
@@ -173,7 +190,35 @@ class StorageService {
 		id: string;
 	}): Promise<{ project: TProject } | null> {
 		await this.ensureMigrations();
-		const serializedProject = await this.projectsAdapter.get(id);
+		let serializedProject = await this.projectsAdapter.get(id);
+
+		// Fallback 1: Search all local records in case keyPath differed
+		if (!serializedProject) {
+			try {
+				const all = await this.projectsAdapter.getAll();
+				const matched = all.find((p) => {
+					const pId = (p as any)?.id || (p as any)?.metadata?.id;
+					return pId === id;
+				});
+				if (matched) {
+					serializedProject = matched;
+					await this.projectsAdapter.set({ key: id, value: matched }).catch(() => {});
+				}
+			} catch {}
+		}
+
+		// Fallback 2: Fallback to cloud if not in local storage
+		if (!serializedProject) {
+			try {
+				const cloudProject = await loadProjectFromCloud(id);
+				if (cloudProject) {
+					serializedProject = cloudProject;
+					await this.projectsAdapter.set({ key: id, value: cloudProject });
+				}
+			} catch (cloudErr) {
+				console.warn("[storage] Cloud project load fallback failed:", cloudErr);
+			}
+		}
 
 		if (!serializedProject) return null;
 
@@ -291,7 +336,7 @@ class StorageService {
 		projectId: string;
 		mediaAsset: MediaAsset;
 	}): Promise<void> {
-		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+		const { mediaMetadataAdapter, mediaAssetsAdapter, mediaFallbackAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
 		const metadata: MediaAssetData = {
@@ -304,32 +349,38 @@ class StorageService {
 			height: mediaAsset.height,
 			duration: mediaAsset.duration,
 			thumbnailUrl: mediaAsset.thumbnailUrl,
+			mimeType: mediaAsset.file.type || undefined,
 			ephemeral: mediaAsset.ephemeral,
+			isMissing: false,
 		};
 
+		// 1. Save metadata to IndexedDB
+		await mediaMetadataAdapter.set({
+			key: mediaAsset.id,
+			value: metadata,
+		});
+
+		// 2. Save file backup to IndexedDB (survives system reboots and OPFS clearing)
+		try {
+			await mediaFallbackAdapter.set({
+				key: mediaAsset.id,
+				value: {
+					id: mediaAsset.id,
+					file: mediaAsset.file,
+				},
+			});
+		} catch (fallbackError) {
+			console.warn("IndexedDB file backup save warning:", fallbackError);
+		}
+
+		// 3. Save to OPFS for fast access
 		try {
 			await mediaAssetsAdapter.set({
 				key: mediaAsset.id,
 				value: mediaAsset.file,
 			});
-			await mediaMetadataAdapter.set({
-				key: mediaAsset.id,
-				value: metadata,
-			});
-		} catch (error) {
-			try {
-				await mediaAssetsAdapter.remove(mediaAsset.id);
-			} catch {
-				// Ignore cleanup failures so the original storage error is preserved.
-			}
-
-			if (this.isQuotaExceededError({ error })) {
-				throw new StorageQuotaExceededError({
-					requiredBytes: mediaAsset.file.size,
-				});
-			}
-
-			throw error;
+		} catch (opfsError) {
+			console.warn("OPFS save warning (relying on IndexedDB backup):", opfsError);
 		}
 	}
 
@@ -340,44 +391,87 @@ class StorageService {
 		projectId: string;
 		id: string;
 	}): Promise<MediaAsset | null> {
-		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+		const { mediaMetadataAdapter, mediaAssetsAdapter, mediaFallbackAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
-		const [file, metadata] = await Promise.all([
-			mediaAssetsAdapter.get(id),
-			mediaMetadataAdapter.get(id),
-		]);
+		const metadata = await mediaMetadataAdapter.get(id);
+		if (!metadata) return null;
 
-		if (!file || !metadata) return null;
+		let file: File | Blob | null = null;
 
-		let url: string;
-		if (metadata.type === "image" && (!file.type || file.type === "")) {
+		// 1. Try OPFS first
+		try {
+			file = await mediaAssetsAdapter.get(id);
+		} catch {
+			file = null;
+		}
+
+		// 2. If OPFS returned null or failed, fall back to IndexedDB file storage
+		if (!file) {
 			try {
-				const text = await file.text();
-				if (text.trim().startsWith("<svg")) {
-					const svgBlob = new Blob([text], { type: "image/svg+xml" });
-					url = URL.createObjectURL(svgBlob);
-				} else {
-					url = URL.createObjectURL(file);
+				const fallbackRecord = await mediaFallbackAdapter.get(id);
+				if (fallbackRecord?.file) {
+					file = fallbackRecord.file;
+					// Reseed OPFS in the background if possible
+					if (file instanceof File) {
+						void mediaAssetsAdapter.set({ key: id, value: file }).catch(() => {});
+					}
 				}
 			} catch {
-				url = URL.createObjectURL(file);
+				file = null;
 			}
+		}
+
+		// 3. Infer proper MIME type so HTML5 video, WebCodecs and canvas decoders don't fail
+		const ext = (metadata.name || "").split(".").pop()?.toLowerCase();
+		let mimeType = metadata.mimeType || (file as File | undefined)?.type;
+		if (!mimeType || mimeType === "") {
+			if (metadata.type === "video") {
+				mimeType = ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4";
+			} else if (metadata.type === "audio") {
+				mimeType = ext === "wav" ? "audio/wav" : ext === "ogg" ? "audio/ogg" : "audio/mpeg";
+			} else if (metadata.type === "image") {
+				mimeType = ext === "png" ? "image/png" : ext === "svg" ? "image/svg+xml" : ext === "webp" ? "image/webp" : "image/jpeg";
+			} else {
+				mimeType = "application/octet-stream";
+			}
+		}
+
+		const isMissing = !file;
+		let reconstructedFile: File;
+
+		if (file) {
+			reconstructedFile = new File([file], metadata.name, {
+				type: mimeType,
+				lastModified: metadata.lastModified || Date.now(),
+			});
 		} else {
-			url = URL.createObjectURL(file);
+			// Placeholder File so timeline clip references remain intact and UI doesn't crash
+			reconstructedFile = new File([], metadata.name, {
+				type: mimeType,
+				lastModified: metadata.lastModified || Date.now(),
+			});
+		}
+
+		let url: string;
+		if (file) {
+			url = URL.createObjectURL(reconstructedFile);
+		} else {
+			url = "";
 		}
 
 		return {
 			id: metadata.id,
 			name: metadata.name,
 			type: metadata.type,
-			file,
+			file: reconstructedFile,
 			url,
 			width: metadata.width,
 			height: metadata.height,
 			duration: metadata.duration,
 			thumbnailUrl: metadata.thumbnailUrl,
 			ephemeral: metadata.ephemeral,
+			isMissing,
 		};
 	}
 
@@ -394,9 +488,13 @@ class StorageService {
 		const mediaItems: MediaAsset[] = [];
 
 		for (const id of mediaIds) {
-			const item = await this.loadMediaAsset({ projectId, id });
-			if (item) {
-				mediaItems.push(item);
+			try {
+				const item = await this.loadMediaAsset({ projectId, id });
+				if (item) {
+					mediaItems.push(item);
+				}
+			} catch (itemErr) {
+				console.warn(`[storage] Could not load media asset ${id}:`, itemErr);
 			}
 		}
 
@@ -410,12 +508,13 @@ class StorageService {
 		projectId: string;
 		id: string;
 	}): Promise<void> {
-		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+		const { mediaMetadataAdapter, mediaAssetsAdapter, mediaFallbackAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
 		await Promise.all([
-			mediaAssetsAdapter.remove(id),
-			mediaMetadataAdapter.remove(id),
+			mediaAssetsAdapter.remove(id).catch(() => {}),
+			mediaFallbackAdapter.remove(id).catch(() => {}),
+			mediaMetadataAdapter.remove(id).catch(() => {}),
 		]);
 	}
 
@@ -424,12 +523,15 @@ class StorageService {
 	}: {
 		projectId: string;
 	}): Promise<void> {
-		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+		const { mediaMetadataAdapter, mediaAssetsAdapter, mediaFallbackAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
 		await Promise.all([
-			mediaMetadataAdapter.clear(),
-			mediaAssetsAdapter.clear(),
+			mediaMetadataAdapter.clear().catch(() => {}),
+			mediaAssetsAdapter.clear().catch(() => {}),
+			mediaFallbackAdapter.clear().catch(() => {}),
+			deleteDatabase({ dbName: `video-editor-media-${projectId}` }).catch(() => {}),
+			deleteDatabase({ dbName: `video-editor-media-files-${projectId}` }).catch(() => {}),
 		]);
 	}
 

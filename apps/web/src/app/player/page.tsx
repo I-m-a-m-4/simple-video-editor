@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ function formatTime(seconds: number): string {
 	return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VideoPlayerPage() {
+function VideoPlayerContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 
@@ -564,3 +564,21 @@ export default function VideoPlayerPage() {
 		</div>
 	);
 }
+
+export default function VideoPlayerPage() {
+	return (
+		<Suspense
+			fallback={
+				<div className="relative min-h-screen w-screen flex items-center justify-center bg-black text-white">
+					<div className="flex flex-col items-center gap-3">
+						<div className="size-8 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+						<span className="text-xs font-mono text-white/70">Loading player...</span>
+					</div>
+				</div>
+			}
+		>
+			<VideoPlayerContent />
+		</Suspense>
+	);
+}
+

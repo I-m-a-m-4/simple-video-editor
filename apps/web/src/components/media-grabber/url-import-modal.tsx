@@ -200,6 +200,26 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 			const cleanName = `${decodedTitle.replace(/[^\w\s-]/g, "").trim() || "video"}.mp4`;
 			const file = new File([blob], cleanName, { type: "video/mp4" });
 
+			// 1. Save video directly to user's PC Downloads folder
+			try {
+				const downloadUrl = URL.createObjectURL(blob);
+				const downloadLink = document.createElement("a");
+				downloadLink.href = downloadUrl;
+				downloadLink.download = cleanName;
+				downloadLink.style.display = "none";
+				document.body.appendChild(downloadLink);
+				downloadLink.click();
+				document.body.removeChild(downloadLink);
+				setTimeout(() => URL.revokeObjectURL(downloadUrl), 10_000);
+			} catch (downloadErr) {
+				console.warn("Could not trigger browser download to PC:", downloadErr);
+			}
+
+			// 2. Request persistent storage from browser so data survives reboots
+			if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+				void navigator.storage.persist().catch(() => {});
+			}
+
 			const processed = await processMediaAssets({ files: [file] });
 			if (processed.length === 0) {
 				throw new Error("Could not process video in browser.");
@@ -234,8 +254,8 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 
 			toast.success(
 				convertToShort
-					? "Vertical Short created and added!"
-					: "Video downloaded and added to project!",
+					? "Vertical Short saved to your Downloads folder and added to project!"
+					: "Video saved to your PC Downloads folder and added to project!",
 			);
 
 			onOpenChange(false);

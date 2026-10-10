@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { MediaDragOverlay } from "@/components/editor/panels/assets/drag-overlay";
 import { DraggableItem } from "@/components/editor/panels/assets/draggable-item";
@@ -350,38 +350,77 @@ function MediaItemWithContextMenu({
 	}) => void;
 	onCompress?: (item: MediaAsset) => void;
 }) {
+	const editor = useEditor();
+	const activeProject = useEditor((e) => e.project.getActive());
+	const relinkInputRef = useRef<HTMLInputElement>(null);
 	const { isSelected, selectedIds } = useSelection();
 	const idsToDelete = isSelected(item.id) ? selectedIds : [item.id];
 	const deleteLabel =
 		idsToDelete.length > 1 ? `Delete ${idsToDelete.length} items` : "Delete";
 
+	const handleRelinkFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files;
+		if (files && files.length > 0 && activeProject) {
+			void editor.media.relinkMediaAsset({
+				projectId: activeProject.metadata.id,
+				id: item.id,
+				file: files[0],
+			});
+		}
+	};
+
 	return (
-		<ContextMenu>
-			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-			<ContextMenuContent>
-				{(item.type === "image" || item.type === "video") && onCompress && (
+		<>
+			<input
+				ref={relinkInputRef}
+				type="file"
+				className="hidden"
+				accept={
+					item.type === "video"
+						? "video/*"
+						: item.type === "audio"
+							? "audio/*"
+							: "image/*"
+				}
+				onChange={handleRelinkFile}
+			/>
+			<ContextMenu>
+				<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+				<ContextMenuContent>
 					<ContextMenuItem
 						onClick={(event) => {
 							event.stopPropagation();
-							onCompress(item);
+							relinkInputRef.current?.click();
 						}}
 						className="cursor-pointer gap-2"
 					>
-						<Minimize2 className="size-3.5 text-indigo-500" />
-						Compress {item.type}...
+						<HugeiconsIcon icon={Link01Icon} className="size-3.5 text-orange-500" />
+						{item.isMissing ? "Relink missing file..." : "Replace / Relink file..."}
 					</ContextMenuItem>
-				)}
-				<ContextMenuItem>Export clips</ContextMenuItem>
-				<ContextMenuItem
-					variant="destructive"
-					onClick={(event: React.MouseEvent<HTMLDivElement>) =>
-						onRemove({ event, ids: idsToDelete })
-					}
-				>
-					{deleteLabel}
-				</ContextMenuItem>
-			</ContextMenuContent>
-		</ContextMenu>
+					{(item.type === "image" || item.type === "video") && onCompress && (
+						<ContextMenuItem
+							onClick={(event) => {
+								event.stopPropagation();
+								onCompress(item);
+							}}
+							className="cursor-pointer gap-2"
+						>
+							<Minimize2 className="size-3.5 text-indigo-500" />
+							Compress {item.type}...
+						</ContextMenuItem>
+					)}
+					<ContextMenuItem>Export clips</ContextMenuItem>
+					<ContextMenuItem
+						variant="destructive"
+						onClick={(event: React.MouseEvent<HTMLDivElement>) =>
+							onRemove({ event, ids: idsToDelete })
+						}
+					>
+						{deleteLabel}
+					</ContextMenuItem>
+				</ContextMenuContent>
+			</ContextMenu>
+		</>
 	);
 }
 
@@ -496,10 +535,16 @@ function MediaPreview({
 	variant?: "grid" | "compact";
 }) {
 	const shouldShowDurationBadge = variant === "grid";
+	const missingBadge = item.isMissing ? (
+		<div className="absolute top-1 left-1 rounded bg-red-600 px-1 py-0.5 text-[9px] font-semibold text-white z-20 shadow-xs">
+			Offline
+		</div>
+	) : null;
 
 	if (item.type === "image") {
 		return (
 			<div className="relative flex size-full items-center justify-center bg-muted">
+				{missingBadge}
 				<Image
 					src={item.url ?? ""}
 					alt={item.name}
@@ -517,6 +562,7 @@ function MediaPreview({
 		if (item.thumbnailUrl) {
 			return (
 				<div className="relative size-full">
+					{missingBadge}
 					<Image
 						src={item.thumbnailUrl}
 						alt={item.name}
@@ -534,12 +580,15 @@ function MediaPreview({
 		}
 
 		return (
-			<MediaTypePlaceholder
-				icon={Video01Icon}
-				label="Video"
-				duration={item.duration}
-				variant="muted"
-			/>
+			<div className="relative size-full">
+				{missingBadge}
+				<MediaTypePlaceholder
+					icon={Video01Icon}
+					label="Video"
+					duration={item.duration}
+					variant="muted"
+				/>
+			</div>
 		);
 	}
 

@@ -15,6 +15,7 @@ import {
 	initializeGpuRenderer,
 	isGpuAvailable,
 } from "@/services/renderer/gpu-renderer";
+import { storageService } from "@/services/storage/service";
 
 interface EditorProviderProps {
 	projectId: string;
@@ -39,6 +40,9 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 		const loadProject = async () => {
 			try {
 				setIsLoading(true);
+				if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+					void navigator.storage.persist().catch(() => {});
+				}
 				await initializeGpuRenderer();
 				editor.renderer.setDegraded(!isGpuAvailable());
 				await editor.project.loadProject({ id: projectId });
@@ -57,6 +61,15 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 
 				if (isNotFound) {
 					try {
+						const allProjects = await storageService.loadAllProjectsMetadata();
+						if (allProjects && allProjects.length > 0) {
+							const otherProjects = allProjects.filter((p) => p.id !== projectId);
+							if (otherProjects.length > 0) {
+								router.replace(`/editor/${otherProjects[0].id}`);
+								return;
+							}
+						}
+
 						const newProjectId = await editor.project.createNewProject({
 							name: "Untitled Project",
 						});

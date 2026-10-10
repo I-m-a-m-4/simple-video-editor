@@ -59,6 +59,39 @@ export class MediaManager {
 		}
 	}
 
+	async relinkMediaAsset({
+		projectId,
+		id,
+		file,
+	}: {
+		projectId: string;
+		id: string;
+		file: File;
+	}): Promise<boolean> {
+		const target = this.assets.find((a) => a.id === id);
+		if (!target) return false;
+
+		const updatedAsset: MediaAsset = {
+			...target,
+			file,
+			url: URL.createObjectURL(file),
+			isMissing: false,
+		};
+
+		this.assets = this.assets.map((a) => (a.id === id ? updatedAsset : a));
+		this.notify();
+
+		try {
+			await storageService.saveMediaAsset({ projectId, mediaAsset: updatedAsset });
+			toast.success(`Relinked: ${updatedAsset.name}`);
+			return true;
+		} catch (err) {
+			console.error("Failed to save relinked asset:", err);
+			toast.error("Failed to save relinked asset to storage");
+			return false;
+		}
+	}
+
 	removeMediaAsset({ projectId, id }: { projectId: string; id: string }): void {
 		this.removeMediaAssets({ projectId, ids: [id] });
 	}

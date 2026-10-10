@@ -7,6 +7,7 @@ import {
 	doc,
 	setDoc,
 	getDocs,
+	getDoc,
 	deleteDoc,
 	query,
 	orderBy,
@@ -15,6 +16,7 @@ import {
 	type Firestore,
 } from "firebase/firestore";
 import type { AiChatItem } from "@/ai/types";
+import type { SerializedProject } from "@/services/storage/types";
 
 export const firebaseConfig = {
 	apiKey: "AIzaSyB3wk_oEB9ON7gO9KRoZFHLAMxTJ-2RRAw",
@@ -151,5 +153,59 @@ export async function clearChatMessages(projectId: string): Promise<void> {
 		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
 			console.warn("[Firebase] Could not clear chat messages:", err?.message || err);
 		}
+	}
+}
+
+/**
+ * Save project data to Firebase Firestore cloud storage.
+ */
+export async function saveProjectToCloud(
+	project: SerializedProject,
+	userId?: string,
+): Promise<void> {
+	if (!project?.metadata?.id) return;
+
+	try {
+		const docRef = doc(db, "projects", project.metadata.id);
+		// Clean undefined fields for Firestore compatibility
+		const cleanProject = JSON.parse(JSON.stringify(project));
+		await setDoc(
+			docRef,
+			{
+				...cleanProject,
+				userId: userId || null,
+				cloudUpdatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+	} catch (err: any) {
+		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
+			console.warn("[Firebase] Could not sync project to cloud:", err?.message || err);
+		}
+	}
+}
+
+/**
+ * Load project data from Firebase Firestore cloud storage.
+ */
+export async function loadProjectFromCloud(
+	projectId: string,
+): Promise<SerializedProject | null> {
+	if (!projectId) return null;
+
+	try {
+		const docRef = doc(db, "projects", projectId);
+		const snap = await getDoc(docRef);
+		if (snap.exists()) {
+			const data = snap.data();
+			const { userId: _u, cloudUpdatedAt: _c, ...projectData } = data;
+			return projectData as SerializedProject;
+		}
+		return null;
+	} catch (err: any) {
+		if (err?.code !== "permission-denied" && !err?.message?.includes("permissions")) {
+			console.warn("[Firebase] Could not load project from cloud:", err?.message || err);
+		}
+		return null;
 	}
 }

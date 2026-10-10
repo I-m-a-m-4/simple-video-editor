@@ -187,7 +187,15 @@ export class ProjectManager {
 				}
 			}
 		} catch (error) {
-			console.error("Failed to load project:", error);
+			const isNotFound =
+				error instanceof Error &&
+				(error.message.includes("not found") ||
+					error.message.includes("does not exist"));
+			if (isNotFound) {
+				console.warn("Project not found:", error.message);
+			} else {
+				console.error("Failed to load project:", error);
+			}
 			throw error;
 		} finally {
 			this.isLoading = false;

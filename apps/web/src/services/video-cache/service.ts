@@ -240,6 +240,7 @@ export class VideoCache {
 		file: File;
 	}): Promise<void> {
 		if (this.sinks.has(mediaId)) return;
+		if (!file || file.size === 0) return;
 
 		if (this.initPromises.has(mediaId)) {
 			await this.initPromises.get(mediaId);
