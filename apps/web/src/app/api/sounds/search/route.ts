@@ -150,6 +150,18 @@ function transformFreesoundResult(
 }
 
 export async function GET(request: NextRequest) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({
+			count: 0,
+			next: null,
+			previous: null,
+			results: [],
+			type: "effects",
+			page: 1,
+			pageSize: 20,
+			sort: "downloads",
+		});
+	}
 	try {
 		const { limited } = await checkRateLimit({ request });
 		if (limited) {

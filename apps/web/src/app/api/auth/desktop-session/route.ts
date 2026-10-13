@@ -27,7 +27,12 @@ function cleanupOldSessions() {
 	}
 }
 
+export const dynamic = "force-static";
+
 export async function GET(req: NextRequest) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({ status: "not_found" });
+	}
 	cleanupOldSessions();
 	const { searchParams } = new URL(req.url);
 	const sessionId = searchParams.get("session");
@@ -62,6 +67,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+	if (process.env.TAURI_EXPORT === "true") {
+		return NextResponse.json({ error: "Not available in desktop" }, { status: 400 });
+	}
 	cleanupOldSessions();
 	try {
 		const body = await req.json();

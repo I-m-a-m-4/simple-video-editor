@@ -11,7 +11,7 @@ import {
 	clearDownloadProgress,
 } from "@/services/media-grabber/progress-tracker";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
 
 export async function GET() {
 	return NextResponse.json({ ok: true });
