@@ -279,7 +279,7 @@ export function VideoToShortsModal({
 			await new Promise((r) => setTimeout(r, 200));
 			toast.success("Shorts project created! 9:16 Canvas & AI Timeline ready.");
 			onOpenChange(false);
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor?project_id=${projectId}`);
 		} catch (error) {
 			console.error("Shorts creation error:", error);
 			toast.error("Failed to generate shorts project.");

@@ -65,7 +65,7 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 						if (allProjects && allProjects.length > 0) {
 							const otherProjects = allProjects.filter((p) => p.id !== projectId);
 							if (otherProjects.length > 0) {
-								router.replace(`/editor/${otherProjects[0].id}`);
+								router.replace(`/editor?project_id=${otherProjects[0].id}`);
 								return;
 							}
 						}
@@ -73,7 +73,7 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 						const newProjectId = await editor.project.createNewProject({
 							name: "Untitled Project",
 						});
-						router.replace(`/editor/${newProjectId}`);
+						router.replace(`/editor?project_id=${newProjectId}`);
 					} catch (_createErr) {
 						setError("Failed to create project");
 						setIsLoading(false);

@@ -14,6 +14,8 @@ interface AuthGuardProps {
 	fallbackMessage?: string;
 }
 
+import { isDesktopApp } from "@/utils/desktop";
+
 export function AuthGuard({
 	children,
 	fallbackMessage = "You must be signed in to create and edit video projects.",
@@ -23,11 +25,16 @@ export function AuthGuard({
 	const pathname = usePathname();
 
 	useEffect(() => {
+		if (isDesktopApp()) return;
 		if (!isLoading && !isAuthenticated) {
 			const redirectParam = encodeURIComponent(pathname || "/projects");
 			router.replace(`/login?redirect=${redirectParam}`);
 		}
 	}, [isAuthenticated, isLoading, router, pathname]);
+
+	if (isDesktopApp()) {
+		return <>{children}</>;
+	}
 
 	if (isLoading) {
 		return (

@@ -282,7 +282,7 @@ function VideoPlayerContent() {
 			// Redirect to editor
 			toast.dismiss("player-import-toast");
 			toast.success("Ready to edit! Opening timeline...");
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor?project_id=${projectId}`);
 		} catch (err: any) {
 			toast.dismiss("player-import-toast");
 			toast.error(err.message || "Could not launch editor.");

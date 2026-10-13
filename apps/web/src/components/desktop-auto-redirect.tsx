@@ -16,17 +16,12 @@ export function isTauriEnvironment(): boolean {
 
 export function DesktopAutoRedirect() {
 	const router = useRouter();
-	const { isAuthenticated, isLoading } = useAuth();
 
 	useEffect(() => {
-		if (isTauriEnvironment() && !isLoading) {
-			if (isAuthenticated) {
-				router.replace("/projects");
-			} else {
-				router.replace("/login");
-			}
+		if (isTauriEnvironment()) {
+			router.replace("/projects");
 		}
-	}, [isAuthenticated, isLoading, router]);
+	}, [router]);
 
 	return null;
 }

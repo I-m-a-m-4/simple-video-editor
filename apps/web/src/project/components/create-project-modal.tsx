@@ -154,7 +154,7 @@ export function CreateProjectModal({
 			setCreationStep("Opening editor...");
 
 			onOpenChange(false);
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor?project_id=${projectId}`);
 		} catch (error) {
 			toast.error("Failed to create project");
 			setIsCreating(false);

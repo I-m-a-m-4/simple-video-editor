@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -28,6 +28,9 @@ import {
 	Check,
 	Minimize2,
 	Maximize2,
+	Mic,
+	Volume2,
+	Radio,
 } from "lucide-react";
 import { useEditor } from "@/editor/use-editor";
 import { processMediaAssets } from "@/media/processing";
@@ -54,7 +57,7 @@ export function ScreenRecorderModal({
 	const [micStream, setMicStream] = useState<MediaStream | null>(null);
 
 	// Settings
-	const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+	const [isCameraEnabled, setIsCameraEnabled] = useState(false);
 	const [isMicEnabled, setIsMicEnabled] = useState(true);
 	const [isSystemAudioEnabled, setIsSystemAudioEnabled] = useState(true);
 	const [pipPosition, setPipPosition] = useState<PipPosition>("bottom-right");
@@ -77,8 +80,9 @@ export function ScreenRecorderModal({
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
 	const [isMinimized, setIsMinimized] = useState(false);
 
-	// Recording refs
+	// Recording refs & state
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 	const screenVideoRef = useRef<HTMLVideoElement | null>(null);
 	const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
 	const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -86,8 +90,9 @@ export function ScreenRecorderModal({
 	const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 	const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
 	const [isExporting, setIsExporting] = useState(false);
+	const audioContextRef = useRef<AudioContext | null>(null);
 
-	// Smooth animation state for zoom & pan
+	// Animation state for zoom & pan
 	const zoomAnimRef = useRef({
 		currentZoom: 1,
 		currentPanX: 0.5,
@@ -95,7 +100,7 @@ export function ScreenRecorderModal({
 	});
 	const animFrameRef = useRef<number | null>(null);
 
-	// Initialize video elements for rendering
+	// Initialize hidden video elements
 	useEffect(() => {
 		if (!screenVideoRef.current) {
 			const video = document.createElement("video");
@@ -113,7 +118,7 @@ export function ScreenRecorderModal({
 		}
 	}, []);
 
-	// Elapsed timer
+	// Elapsed recording timer
 	useEffect(() => {
 		let interval: NodeJS.Timeout;
 		if (status === "recording") {
@@ -124,7 +129,7 @@ export function ScreenRecorderModal({
 		return () => clearInterval(interval);
 	}, [status]);
 
-	// Cleanup on close
+	// Cleanup when modal is closed completely
 	useEffect(() => {
 		if (!isOpen) {
 			stopAllStreams();
@@ -132,11 +137,11 @@ export function ScreenRecorderModal({
 			setStatus("idle");
 			setElapsedSeconds(0);
 			setIsMinimized(false);
-			setRecordedBlob(null);
 			if (recordedUrl) {
 				URL.revokeObjectURL(recordedUrl);
 				setRecordedUrl(null);
 			}
+			setRecordedBlob(null);
 		}
 	}, [isOpen]);
 
@@ -147,16 +152,20 @@ export function ScreenRecorderModal({
 		setScreenStream(null);
 		setCameraStream(null);
 		setMicStream(null);
-		setIsMinimized(false);
+		if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+			audioContextRef.current.close().catch(() => {});
+			audioContextRef.current = null;
+		}
 	};
 
-	// Start Screen & Camera setup
+	// Initialize capture streams
 	const initializeCapture = async () => {
 		try {
 			// 1. Get Screen Stream
 			const screen = await navigator.mediaDevices.getDisplayMedia({
 				video: {
 					displaySurface: "monitor",
+					frameRate: { ideal: 60, max: 60 },
 				},
 				audio: isSystemAudioEnabled,
 			});
@@ -174,10 +183,13 @@ export function ScreenRecorderModal({
 			}
 			setScreenStream(screen);
 
-			// Listen for user stopping screen share from browser banner
+			// Listen for user stopping screen share via OS/browser banner
 			screen.getVideoTracks()[0].onended = () => {
 				if (status === "recording" || status === "paused") {
 					stopRecording();
+				} else {
+					stopAllStreams();
+					setStatus("idle");
 				}
 			};
 
@@ -194,8 +206,8 @@ export function ScreenRecorderModal({
 					}
 					setCameraStream(cam);
 				} catch (err) {
-					console.warn("Camera permission denied or camera unavailable:", err);
-					toast.info("Continuing without camera (camera access not granted)");
+					console.warn("Camera unavailable:", err);
+					toast.info("Continuing without camera.");
 					setIsCameraEnabled(false);
 				}
 			}
@@ -213,8 +225,8 @@ export function ScreenRecorderModal({
 					});
 					setMicStream(mic);
 				} catch (err) {
-					console.warn("Microphone permission denied:", err);
-					toast.info("Microphone not available");
+					console.warn("Microphone access unavailable:", err);
+					toast.info("Microphone not available.");
 					setIsMicEnabled(false);
 				}
 			}
@@ -223,11 +235,11 @@ export function ScreenRecorderModal({
 			startLiveCanvasLoop();
 		} catch (error) {
 			console.error("Screen capture failed:", error);
-			toast.error("Screen capture cancelled or not allowed.");
+			toast.error("Screen capture was cancelled or not permitted.");
 		}
 	};
 
-	// Canvas compositor loop: screen + smooth zoom + camera PiP
+	// Continuous Canvas Compositor Loop
 	const startLiveCanvasLoop = () => {
 		const canvas = canvasRef.current;
 		if (!canvas) return;
@@ -238,7 +250,6 @@ export function ScreenRecorderModal({
 		canvas.height = 1080;
 
 		const render = () => {
-			if (!screenVideoRef.current) return;
 			const screenVid = screenVideoRef.current;
 			const camVid = cameraVideoRef.current;
 
@@ -258,7 +269,7 @@ export function ScreenRecorderModal({
 			ctx.fillStyle = "#0c0d12";
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-			// Draw screen video with zoom & pan
+			// Draw screen video
 			const isScreenActive = screenVid && (screenVid.videoWidth > 0 || screenVid.readyState >= 1);
 			if (isScreenActive && screenVid.videoWidth > 0) {
 				if (screenVid.paused) {
@@ -267,7 +278,6 @@ export function ScreenRecorderModal({
 				const vidW = screenVid.videoWidth;
 				const vidH = screenVid.videoHeight;
 
-				// Visible source window inside the video
 				const cropW = vidW / currentZoom;
 				const cropH = vidH / currentZoom;
 
@@ -300,7 +310,7 @@ export function ScreenRecorderModal({
 				ctx.fillText("Capturing display... Minimize AmberCut to record any app or window", canvas.width / 2, canvas.height / 2 + 20);
 			}
 
-			// Draw Camera Picture-in-Picture (PiP)
+			// Draw Camera PiP if active
 			if (
 				isCameraEnabled &&
 				camVid &&
@@ -308,7 +318,7 @@ export function ScreenRecorderModal({
 				camVid.videoWidth > 0
 			) {
 				const padding = 40;
-				const size = pipSize * 1.5; // scaled for 1080p canvas
+				const size = pipSize * 1.5;
 				let pipX = canvas.width - size - padding;
 				let pipY = canvas.height - size - padding;
 
@@ -324,8 +334,6 @@ export function ScreenRecorderModal({
 				}
 
 				ctx.save();
-
-				// Drop shadow for PiP
 				ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
 				ctx.shadowBlur = 32;
 				ctx.shadowOffsetX = 0;
@@ -342,7 +350,6 @@ export function ScreenRecorderModal({
 				ctx.closePath();
 				ctx.clip();
 
-				// Mirror camera horizontally if set
 				if (mirrorCamera) {
 					ctx.translate(pipX + size, pipY);
 					ctx.scale(-1, 1);
@@ -365,10 +372,10 @@ export function ScreenRecorderModal({
 
 				ctx.restore();
 
-				// Border ring around PiP in brand orange
+				// Orange border ring around PiP
 				ctx.save();
 				ctx.lineWidth = 5;
-				ctx.strokeStyle = "rgba(249, 115, 22, 0.95)"; // Brand Orange glow
+				ctx.strokeStyle = "rgba(249, 115, 22, 0.95)";
 				ctx.beginPath();
 				if (pipShape === "circle") {
 					const radius = size / 2;
@@ -380,13 +387,25 @@ export function ScreenRecorderModal({
 				ctx.restore();
 			}
 
+			// Also mirror to preview canvas if it's currently rendered in dialog
+			if (previewCanvasRef.current) {
+				const pCtx = previewCanvasRef.current.getContext("2d");
+				if (pCtx) {
+					if (previewCanvasRef.current.width !== canvas.width) {
+						previewCanvasRef.current.width = canvas.width;
+						previewCanvasRef.current.height = canvas.height;
+					}
+					pCtx.drawImage(canvas, 0, 0);
+				}
+			}
+
 			animFrameRef.current = requestAnimationFrame(render);
 		};
 
 		animFrameRef.current = requestAnimationFrame(render);
 	};
 
-	// Start recording with 3-second countdown
+	// Start 3-second countdown
 	const triggerCountdown = () => {
 		setStatus("countdown");
 		setCountdown(3);
@@ -402,61 +421,120 @@ export function ScreenRecorderModal({
 		}, 1000);
 	};
 
-	const startActualRecording = () => {
-		const canvas = canvasRef.current;
-		if (!canvas) return;
-
-		const canvasStream = canvas.captureStream(60);
-		const audioCtx = new AudioContext();
-		const dest = audioCtx.createMediaStreamDestination();
-
-		if (micStream && micStream.getAudioTracks().length > 0) {
-			const micSource = audioCtx.createMediaStreamSource(micStream);
-			micSource.connect(dest);
+	// Start recording
+	const startActualRecording = async () => {
+		if (!screenStream) {
+			toast.error("Screen stream is not available.");
+			setStatus("idle");
+			return;
 		}
 
-		if (screenStream && screenStream.getAudioTracks().length > 0) {
-			const sysSource = audioCtx.createMediaStreamSource(screenStream);
-			sysSource.connect(dest);
-		}
+		try {
+			let recordStream: MediaStream;
 
-		const combinedStream = new MediaStream([
-			...canvasStream.getVideoTracks(),
-			...dest.stream.getAudioTracks(),
-		]);
-
-		recordedChunksRef.current = [];
-
-		let mimeType = "video/webm;codecs=vp9,opus";
-		if (!MediaRecorder.isTypeSupported(mimeType)) {
-			mimeType = "video/webm";
-		}
-
-		const recorder = new MediaRecorder(combinedStream, {
-			mimeType,
-			videoBitsPerSecond: 6_000_000,
-		});
-
-		recorder.ondataavailable = (e) => {
-			if (e.data && e.data.size > 0) {
-				recordedChunksRef.current.push(e.data);
+			// If camera PiP or dynamic zoom is enabled, use canvas capture.
+			// Otherwise, record directly from screenStream for maximum 60fps hardware quality.
+			if (isCameraEnabled || targetZoom > 1) {
+				const canvas = canvasRef.current;
+				if (!canvas) {
+					toast.error("Compositor canvas is not ready.");
+					return;
+				}
+				recordStream = canvas.captureStream(60);
+			} else {
+				recordStream = screenStream.clone();
 			}
-		};
 
-		recorder.onstop = () => {
-			const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-			setRecordedBlob(blob);
-			const url = URL.createObjectURL(blob);
-			setRecordedUrl(url);
-			setStatus("preview");
-		};
+			// Web Audio mixing for Mic + System Audio
+			const audioTracks: MediaStreamTrack[] = [];
+			try {
+				const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+				const audioCtx = new AudioContextClass();
+				audioContextRef.current = audioCtx;
+				if (audioCtx.state === "suspended") {
+					await audioCtx.resume();
+				}
 
-		recorder.start(1000);
-		mediaRecorderRef.current = recorder;
-		setStatus("recording");
-		setElapsedSeconds(0);
-		setIsMinimized(true);
-		toast.success("Recording started! Collapsed to floating bar so you can capture your screen.");
+				const dest = audioCtx.createMediaStreamDestination();
+				let hasAudioSources = false;
+
+				if (micStream && micStream.getAudioTracks().length > 0) {
+					const micSource = audioCtx.createMediaStreamSource(micStream);
+					micSource.connect(dest);
+					hasAudioSources = true;
+				}
+
+				if (screenStream && screenStream.getAudioTracks().length > 0) {
+					const sysSource = audioCtx.createMediaStreamSource(screenStream);
+					sysSource.connect(dest);
+					hasAudioSources = true;
+				}
+
+				if (hasAudioSources) {
+					audioTracks.push(...dest.stream.getAudioTracks());
+				}
+			} catch (audioErr) {
+				console.warn("Audio mixing warning:", audioErr);
+			}
+
+			// Combine video with audio
+			const combinedStream = new MediaStream([
+				...recordStream.getVideoTracks(),
+				...audioTracks,
+			]);
+
+			recordedChunksRef.current = [];
+
+			// Choose best supported MIME type
+			const mimeCandidates = [
+				"video/webm;codecs=vp9,opus",
+				"video/webm;codecs=vp8,opus",
+				"video/webm",
+				"video/mp4",
+			];
+			let selectedMime = "";
+			for (const mime of mimeCandidates) {
+				if (MediaRecorder.isTypeSupported(mime)) {
+					selectedMime = mime;
+					break;
+				}
+			}
+
+			const recorder = new MediaRecorder(
+				combinedStream,
+				selectedMime ? { mimeType: selectedMime, videoBitsPerSecond: 8_000_000 } : undefined,
+			);
+
+			recorder.ondataavailable = (e) => {
+				if (e.data && e.data.size > 0) {
+					recordedChunksRef.current.push(e.data);
+				}
+			};
+
+			recorder.onstop = () => {
+				const blob = new Blob(recordedChunksRef.current, {
+					type: selectedMime || "video/webm",
+				});
+				setRecordedBlob(blob);
+				const url = URL.createObjectURL(blob);
+				setRecordedUrl(url);
+				setStatus("preview");
+				setIsMinimized(false);
+				toast.success("Recording complete! Ready to edit or download.");
+			};
+
+			// Collect chunk every 500ms
+			recorder.start(500);
+			mediaRecorderRef.current = recorder;
+			setStatus("recording");
+			setElapsedSeconds(0);
+			setIsMinimized(true);
+			toast.success("Recording started! Collapsed to OBS-style floating bar.");
+		} catch (recErr: any) {
+			console.error("Failed to start MediaRecorder:", recErr);
+			toast.error(`Recording error: ${recErr?.message || "Could not start recorder"}`);
+			setStatus("ready");
+		}
 	};
 
 	const pauseRecording = () => {
@@ -517,7 +595,7 @@ export function ScreenRecorderModal({
 
 			toast.success("Project created with your recording!");
 			onOpenChange(false);
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor?project_id=${projectId}`);
 		} catch (error) {
 			console.error("Failed to load recording into editor:", error);
 			toast.error("Could not load recording into editor.");
@@ -530,7 +608,7 @@ export function ScreenRecorderModal({
 		if (!recordedUrl) return;
 		const a = document.createElement("a");
 		a.href = recordedUrl;
-		a.download = `recording-${Date.now()}.webm`;
+		a.download = `ambercut-recording-${Date.now()}.webm`;
 		a.click();
 		toast.success("Download started!");
 	};
@@ -553,12 +631,8 @@ export function ScreenRecorderModal({
 
 	return (
 		<>
-			{/* DOM-mounted video tags for reliable Chromium / WebView2 video frame rendering */}
-			<video
-				ref={screenVideoRef}
-				autoPlay
-				playsInline
-				muted
+			{/* Permanent hidden video and compositor canvas elements that are NEVER unmounted during recording */}
+			<div
 				style={{
 					position: "fixed",
 					top: -9999,
@@ -567,30 +641,27 @@ export function ScreenRecorderModal({
 					height: 1,
 					opacity: 0,
 					pointerEvents: "none",
+					overflow: "hidden",
 				}}
-			/>
-			<video
-				ref={cameraVideoRef}
-				autoPlay
-				playsInline
-				muted
-				style={{
-					position: "fixed",
-					top: -9999,
-					left: -9999,
-					width: 1,
-					height: 1,
-					opacity: 0,
-					pointerEvents: "none",
-				}}
-			/>
+			>
+				<video ref={screenVideoRef} autoPlay playsInline muted />
+				<video ref={cameraVideoRef} autoPlay playsInline muted />
+				<canvas ref={canvasRef} width={1920} height={1080} />
+			</div>
 
-			{/* Floating Mini Recorder Widget when recording is active and minimized */}
+			{/* OBS Studio Style Floating Recording Bar */}
 			{isMinimized && (status === "recording" || status === "paused" || status === "countdown") && (
-				<div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-zinc-950/95 text-white backdrop-blur-2xl border border-orange-500/40 shadow-2xl animate-in slide-in-from-bottom-5">
+				<div className="fixed bottom-6 right-6 z-[99999] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-zinc-950/95 text-white backdrop-blur-2xl border border-orange-500/50 shadow-2xl animate-in slide-in-from-bottom-5">
 					<div className="flex items-center gap-2 font-mono text-xs font-bold text-red-500">
 						<span className="size-2.5 rounded-full bg-red-500 animate-ping" />
 						<span>REC {formatTime(elapsedSeconds)}</span>
+					</div>
+
+					{/* Audio activity visualizer dots */}
+					<div className="flex items-center gap-0.5">
+						<span className="w-1 h-3 rounded-full bg-emerald-500 animate-pulse" />
+						<span className="w-1 h-4 rounded-full bg-emerald-400 animate-pulse delay-75" />
+						<span className="w-1 h-2 rounded-full bg-emerald-500 animate-pulse delay-150" />
 					</div>
 
 					<div className="h-4 w-px bg-white/20" />
@@ -615,7 +686,7 @@ export function ScreenRecorderModal({
 						className="h-8 px-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-xs gap-1.5 shadow-md cursor-pointer"
 					>
 						<Square className="size-3.5 fill-current" />
-						<span>Stop</span>
+						<span>Stop Recording</span>
 					</Button>
 
 					<Button
@@ -623,16 +694,17 @@ export function ScreenRecorderModal({
 						variant="ghost"
 						onClick={() => setIsMinimized(false)}
 						className="size-8 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer"
-						title="Expand Studio Preview"
+						title="Expand Studio Controls"
 					>
 						<Maximize2 className="size-4" />
 					</Button>
 				</div>
 			)}
 
+			{/* Main Studio Modal Dialog */}
 			<Dialog open={isOpen && !isMinimized} onOpenChange={onOpenChange}>
 				<DialogContent className="max-w-4xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-xl">
-					{/* Top Header Bar */}
+					{/* Header */}
 					<div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
 						<div className="flex items-center gap-3">
 							<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
@@ -642,11 +714,11 @@ export function ScreenRecorderModal({
 								<DialogTitle className="text-base font-semibold flex items-center gap-2">
 									Studio Screen Recorder
 									<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-medium text-[11px] rounded-md">
-										PiP & Zoom
+										OBS Mode
 									</Badge>
 								</DialogTitle>
 								<DialogDescription className="text-xs text-muted-foreground">
-									Record full screen or windows with live webcam picture-in-picture & smooth zoom
+									High-performance screen capture with webcam PiP, microphone narration & zoom
 								</DialogDescription>
 							</div>
 						</div>
@@ -658,10 +730,9 @@ export function ScreenRecorderModal({
 									size="sm"
 									onClick={() => setIsMinimized(true)}
 									className="h-7 text-xs px-2.5 rounded-lg border-border text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer"
-									title="Minimize to floating bar so you can capture your desktop"
 								>
 									<Minimize2 className="size-3.5 text-orange-500" />
-									<span>Minimize Bar</span>
+									<span>Minimize Floating Bar</span>
 								</Button>
 								<div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-500 animate-pulse font-mono text-xs font-bold">
 									<div className="size-2 rounded-full bg-red-500" />
@@ -671,319 +742,362 @@ export function ScreenRecorderModal({
 						)}
 					</div>
 
-				{/* Main Content Area */}
-				<div className="p-5 flex flex-col gap-5">
-					{status === "idle" ? (
-						<div className="flex flex-col items-center justify-center py-10 px-4 gap-5 text-center">
-							<div className="size-16 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 shadow-sm">
-								<Monitor className="size-8" />
-							</div>
-
-							<div className="max-w-md flex flex-col gap-1.5">
-								<h3 className="text-lg font-bold">
-									Record Screen & Picture-in-Picture
-								</h3>
-								<p className="text-xs text-muted-foreground leading-relaxed">
-									Create professional launch videos, demos, and tutorials.
-									Includes camera overlay and dynamic zoom focus.
-								</p>
-							</div>
-
-							{/* Configuration Options */}
-							<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-lg text-left">
-								<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
-									<div className="flex items-center justify-between">
-										<span className="text-xs font-semibold">Camera PiP</span>
-										<Switch
-											checked={isCameraEnabled}
-											onCheckedChange={setIsCameraEnabled}
-										/>
-									</div>
-									<span className="text-[11px] text-muted-foreground">
-										Show face in corner circle
-									</span>
+					{/* Main Body */}
+					<div className="p-5 flex flex-col gap-5">
+						{status === "idle" ? (
+							<div className="flex flex-col items-center justify-center py-8 px-4 gap-5 text-center">
+								<div className="size-16 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 shadow-sm">
+									<Monitor className="size-8" />
 								</div>
 
-								<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
-									<div className="flex items-center justify-between">
-										<span className="text-xs font-semibold">Microphone</span>
-										<Switch
-											checked={isMicEnabled}
-											onCheckedChange={setIsMicEnabled}
-										/>
-									</div>
-									<span className="text-[11px] text-muted-foreground">
-										Narrate with microphone
-									</span>
+								<div className="max-w-md flex flex-col gap-1.5">
+									<h3 className="text-lg font-bold">
+										Record Screen & Audio
+									</h3>
+									<p className="text-xs text-muted-foreground leading-relaxed">
+										Record crisp 60fps tutorials, gameplay, or presentations.
+										Captures screen, system audio, and microphone directly.
+									</p>
 								</div>
 
-								<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
-									<div className="flex items-center justify-between">
-										<span className="text-xs font-semibold">System Audio</span>
-										<Switch
-											checked={isSystemAudioEnabled}
-											onCheckedChange={setIsSystemAudioEnabled}
-										/>
-									</div>
-									<span className="text-[11px] text-muted-foreground">
-										Capture computer audio
-									</span>
-								</div>
-							</div>
-
-							<Button
-								size="default"
-								onClick={initializeCapture}
-								className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-6 py-5 rounded-lg shadow-md shadow-orange-500/25 text-sm"
-							>
-								<Monitor className="size-4" />
-								Select Screen to Record
-							</Button>
-						</div>
-					) : status === "preview" ? (
-						<div className="flex flex-col gap-5">
-							<div className="aspect-video bg-black rounded-lg overflow-hidden border border-border relative">
-								{recordedUrl && (
-									<video
-										src={recordedUrl}
-										controls
-										className="size-full object-contain"
-										autoPlay
-									/>
-								)}
-							</div>
-
-							<div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-lg bg-muted/30 border border-border">
-								<div className="flex items-center gap-3">
-									<div className="size-8 rounded-full bg-orange-500/15 text-orange-500 flex items-center justify-center">
-										<Check className="size-4" />
-									</div>
-									<div>
-										<h4 className="text-xs font-bold">Recording Ready</h4>
-										<p className="text-[11px] text-muted-foreground">
-											Duration: {formatTime(elapsedSeconds)} • 1080p 60fps
-										</p>
-									</div>
-								</div>
-
-								<div className="flex items-center gap-2.5">
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() => {
-											setStatus("idle");
-											setRecordedBlob(null);
-										}}
-										className="rounded-lg text-xs"
-									>
-										<RotateCcw className="size-3.5 mr-1.5" />
-										Record Again
-									</Button>
-
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={handleDownload}
-										className="rounded-lg text-xs"
-									>
-										<Download className="size-3.5 mr-1.5" />
-										Download
-									</Button>
-
-									<Button
-										size="sm"
-										onClick={handleOpenInEditor}
-										disabled={isExporting}
-										className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs rounded-lg shadow-sm"
-									>
-										<Sparkles className="size-3.5 mr-1.5" />
-										{isExporting ? "Opening Editor..." : "Open in Video Editor"}
-									</Button>
-								</div>
-							</div>
-						</div>
-					) : (
-						<div className="flex flex-col gap-4">
-							{/* Live Canvas Stage */}
-							<div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-border shadow-md">
-								<canvas
-									ref={canvasRef}
-									className="size-full object-contain cursor-crosshair"
-									onClick={(e) => {
-										const rect = e.currentTarget.getBoundingClientRect();
-										const x = (e.clientX - rect.left) / rect.width;
-										const y = (e.clientY - rect.top) / rect.height;
-										setFocusPoint({ x, y });
-									}}
-								/>
-
-								{status === "countdown" && (
-									<div className="absolute inset-0 bg-black/75 backdrop-blur-xs flex flex-col items-center justify-center gap-3 z-30">
-										<span className="text-7xl font-black text-orange-400 animate-ping">
-											{countdown}
-										</span>
-										<span className="text-sm text-white font-medium">
-											Get ready to record...
+								{/* Sources Toggle */}
+								<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-lg text-left">
+									<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-semibold flex items-center gap-1.5">
+												<Video className="size-3.5 text-orange-500" />
+												Camera PiP
+											</span>
+											<Switch
+												checked={isCameraEnabled}
+												onCheckedChange={setIsCameraEnabled}
+											/>
+										</div>
+										<span className="text-[11px] text-muted-foreground">
+											Facecam corner overlay
 										</span>
 									</div>
-								)}
 
-								{targetZoom > 1 && (
-									<div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-md bg-orange-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-md">
-										<ZoomIn className="size-3" />
-										<span>{targetZoom}x Focus Zoom Active</span>
+									<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-semibold flex items-center gap-1.5">
+												<Mic className="size-3.5 text-orange-500" />
+												Microphone
+											</span>
+											<Switch
+												checked={isMicEnabled}
+												onCheckedChange={setIsMicEnabled}
+											/>
+										</div>
+										<span className="text-[11px] text-muted-foreground">
+											Voice commentary
+										</span>
 									</div>
-								)}
+
+									<div className="p-3.5 rounded-lg bg-muted/40 border border-border flex flex-col justify-between gap-2.5">
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-semibold flex items-center gap-1.5">
+												<Volume2 className="size-3.5 text-orange-500" />
+												System Audio
+											</span>
+											<Switch
+												checked={isSystemAudioEnabled}
+												onCheckedChange={setIsSystemAudioEnabled}
+											/>
+										</div>
+										<span className="text-[11px] text-muted-foreground">
+											Computer sounds
+										</span>
+									</div>
+								</div>
+
+								<Button
+									size="default"
+									onClick={initializeCapture}
+									className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-6 py-5 rounded-lg shadow-md shadow-orange-500/25 text-sm cursor-pointer"
+								>
+									<Monitor className="size-4" />
+									Select Screen to Record
+								</Button>
 							</div>
-
-							{/* Controls */}
-							<div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 rounded-lg bg-muted/30 border border-border">
-								{/* Zoom */}
-								<div className="flex flex-col gap-2">
-									<div className="flex items-center justify-between">
-										<Label className="text-xs font-semibold flex items-center gap-1.5">
-											<ZoomIn className="size-3.5 text-orange-500" />
-											Zoom & Focus ({targetZoom}x)
-										</Label>
-										<span className="text-[10px] text-muted-foreground">Demo mode</span>
-									</div>
-									<div className="flex items-center gap-1.5">
-										{([1, 1.5, 2, 2.5] as ZoomPreset[]).map((z) => (
-											<Button
-												key={z}
-												size="sm"
-												variant={targetZoom === z ? "default" : "outline"}
-												onClick={() => setTargetZoom(z)}
-												className={`flex-1 text-xs h-7 rounded-md ${
-													targetZoom === z
-														? "bg-orange-500 text-white font-bold"
-														: "text-muted-foreground"
-												}`}
-											>
-												{z === 1 ? "1x" : `${z}x`}
-											</Button>
-										))}
-									</div>
-
-									{targetZoom > 1 && (
-										<div className="flex items-center gap-1 pt-1">
-											<span className="text-[10px] text-muted-foreground mr-1">Focus:</span>
-											{["center", "top-left", "top-right", "bottom-left", "bottom-right"].map(
-												(quad) => (
-													<button
-														key={quad}
-														type="button"
-														onClick={() => handleRegionFocus(quad)}
-														className="px-1.5 py-0.5 rounded text-[10px] bg-muted hover:bg-accent text-foreground border border-border/50"
-													>
-														{quad.replace("-", " ")}
-													</button>
-												),
-											)}
+						) : status === "preview" ? (
+							<div className="flex flex-col gap-5">
+								{/* Playable Video Player */}
+								<div className="aspect-video bg-black rounded-lg overflow-hidden border border-border relative flex items-center justify-center">
+									{recordedUrl ? (
+										<video
+											key={recordedUrl}
+											src={recordedUrl}
+											controls
+											autoPlay
+											playsInline
+											className="size-full object-contain"
+										/>
+									) : (
+										<div className="flex items-center gap-2 text-muted-foreground text-xs font-mono">
+											<span>Processing video recording...</span>
 										</div>
 									)}
 								</div>
 
-								{/* PiP */}
-								<div className="flex flex-col gap-2">
-									<div className="flex items-center justify-between">
-										<Label className="text-xs font-semibold flex items-center gap-1.5">
-											<Video className="size-3.5 text-orange-500" />
-											Webcam Position
-										</Label>
-										<Switch
-											checked={isCameraEnabled}
-											onCheckedChange={setIsCameraEnabled}
-										/>
+								{/* Action bar */}
+								<div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-lg bg-muted/30 border border-border">
+									<div className="flex items-center gap-3">
+										<div className="size-8 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center">
+											<Check className="size-4" />
+										</div>
+										<div>
+											<h4 className="text-xs font-bold text-foreground">
+												Recording Ready ({formatTime(elapsedSeconds)})
+											</h4>
+											<p className="text-[11px] text-muted-foreground">
+												Captured at 60fps. Ready to edit or save.
+											</p>
+										</div>
 									</div>
 
-									{isCameraEnabled && (
-										<div className="flex flex-wrap items-center gap-1">
-											{(
-												[
-													"bottom-right",
-													"bottom-left",
-													"top-right",
-													"top-left",
-												] as PipPosition[]
-											).map((pos) => (
+									<div className="flex items-center gap-2.5">
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => {
+												setStatus("idle");
+												setRecordedBlob(null);
+												if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+												setRecordedUrl(null);
+											}}
+											className="rounded-lg text-xs cursor-pointer"
+										>
+											<RotateCcw className="size-3.5 mr-1.5" />
+											Record Again
+										</Button>
+
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={handleDownload}
+											className="rounded-lg text-xs cursor-pointer"
+										>
+											<Download className="size-3.5 mr-1.5" />
+											Download WebM
+										</Button>
+
+										<Button
+											size="sm"
+											onClick={handleOpenInEditor}
+											disabled={isExporting}
+											className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs rounded-lg shadow-sm cursor-pointer"
+										>
+											<Sparkles className="size-3.5 mr-1.5" />
+											{isExporting ? "Opening Editor..." : "Open in Video Editor"}
+										</Button>
+									</div>
+								</div>
+							</div>
+						) : (
+							<div className="flex flex-col gap-4">
+								{/* Live Preview Stage */}
+								<div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-border shadow-md">
+									<canvas
+										ref={previewCanvasRef}
+										className="size-full object-contain cursor-crosshair"
+										onClick={(e) => {
+											const rect = e.currentTarget.getBoundingClientRect();
+											const x = (e.clientX - rect.left) / rect.width;
+											const y = (e.clientY - rect.top) / rect.height;
+											setFocusPoint({ x, y });
+										}}
+									/>
+
+									{status === "countdown" && (
+										<div className="absolute inset-0 bg-black/75 backdrop-blur-xs flex flex-col items-center justify-center gap-3 z-30">
+											<span className="text-7xl font-black text-orange-400 animate-ping">
+												{countdown}
+											</span>
+											<span className="text-sm text-white font-medium">
+												Recording starts in {countdown}...
+											</span>
+										</div>
+									)}
+
+									{targetZoom > 1 && (
+										<div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-md bg-orange-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-md">
+											<ZoomIn className="size-3" />
+											<span>{targetZoom}x Focus Zoom Active</span>
+										</div>
+									)}
+								</div>
+
+								{/* Control Panel */}
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 rounded-lg bg-muted/30 border border-border">
+									{/* Zoom & Focus */}
+									<div className="flex flex-col gap-2">
+										<div className="flex items-center justify-between">
+											<Label className="text-xs font-semibold flex items-center gap-1.5">
+												<ZoomIn className="size-3.5 text-orange-500" />
+												Zoom & Focus ({targetZoom}x)
+											</Label>
+										</div>
+										<div className="flex items-center gap-1.5">
+											{([1, 1.5, 2, 2.5] as ZoomPreset[]).map((z) => (
 												<Button
-													key={pos}
+													key={z}
 													size="sm"
-													variant={pipPosition === pos ? "default" : "outline"}
-													onClick={() => setPipPosition(pos)}
-													className={`text-[11px] h-7 px-2 rounded-md capitalize ${
-														pipPosition === pos
-															? "bg-orange-500 text-white font-semibold"
+													variant={targetZoom === z ? "default" : "outline"}
+													onClick={() => setTargetZoom(z)}
+													className={`flex-1 text-xs h-7 rounded-md ${
+														targetZoom === z
+															? "bg-orange-500 text-white font-bold"
 															: "text-muted-foreground"
 													}`}
 												>
-													{pos.replace("-", " ")}
+													{z === 1 ? "1x" : `${z}x`}
 												</Button>
 											))}
 										</div>
-									)}
-								</div>
 
-								{/* Record Actions */}
-								<div className="flex flex-col justify-center items-end gap-2">
-									{status === "ready" && (
-										<Button
-											size="default"
-											onClick={triggerCountdown}
-											className="w-full h-10 bg-red-600 hover:bg-red-500 text-white font-bold gap-2 rounded-lg shadow-sm"
-										>
-											<Circle className="size-3.5 fill-white" />
-											Start Recording
-										</Button>
-									)}
+										{targetZoom > 1 && (
+											<div className="flex items-center gap-1 pt-1">
+												<span className="text-[10px] text-muted-foreground mr-1">Focus:</span>
+												{["center", "top-left", "top-right", "bottom-left", "bottom-right"].map(
+													(quad) => (
+														<button
+															key={quad}
+															type="button"
+															onClick={() => handleRegionFocus(quad)}
+															className="px-1.5 py-0.5 rounded text-[10px] bg-muted hover:bg-accent text-foreground border border-border/50 capitalize"
+														>
+															{quad.replace("-", " ")}
+														</button>
+													),
+												)}
+											</div>
+										)}
+									</div>
 
-									{(status === "recording" || status === "paused") && (
-										<div className="flex items-center gap-2 w-full">
-											{status === "recording" ? (
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={pauseRecording}
-													className="flex-1 h-9 rounded-lg gap-1.5 font-semibold text-xs"
-												>
-													<Pause className="size-3.5" />
-													Pause
-												</Button>
-											) : (
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={resumeRecording}
-													className="flex-1 h-9 rounded-lg border-orange-500/50 text-orange-500 gap-1.5 font-semibold text-xs"
-												>
-													<Play className="size-3.5" />
-													Resume
-												</Button>
-											)}
-
-											<Button
-												size="sm"
-												onClick={stopRecording}
-												className="flex-1 h-9 bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 rounded-lg text-xs"
-											>
-												<Square className="size-3 fill-white" />
-												Finish
-											</Button>
+									{/* Webcam PiP Options */}
+									<div className="flex flex-col gap-2">
+										<div className="flex items-center justify-between">
+											<Label className="text-xs font-semibold flex items-center gap-1.5">
+												<Video className="size-3.5 text-orange-500" />
+												Webcam PiP
+											</Label>
+											<Switch
+												checked={isCameraEnabled}
+												onCheckedChange={(checked) => {
+													setIsCameraEnabled(checked);
+													if (checked && !cameraStream) {
+														navigator.mediaDevices.getUserMedia({
+															video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+															audio: false,
+														}).then((cam) => {
+															if (cameraVideoRef.current) {
+																cameraVideoRef.current.srcObject = cam;
+																cameraVideoRef.current.play().catch(() => {});
+															}
+															setCameraStream(cam);
+														}).catch(() => {
+															toast.error("Could not access camera.");
+															setIsCameraEnabled(false);
+														});
+													}
+												}}
+											/>
 										</div>
-									)}
 
-									<div className="flex items-center justify-between text-[11px] text-muted-foreground w-full">
-										<span>1080p 60fps</span>
-										<span>Hotkey: Z (Zoom), C (Cam)</span>
+										{isCameraEnabled && (
+											<div className="flex flex-wrap items-center gap-1">
+												{(
+													[
+														"bottom-right",
+														"bottom-left",
+														"top-right",
+														"top-left",
+													] as PipPosition[]
+												).map((pos) => (
+													<Button
+														key={pos}
+														size="sm"
+														variant={pipPosition === pos ? "default" : "outline"}
+														onClick={() => setPipPosition(pos)}
+														className={`text-[11px] h-7 px-2 rounded-md capitalize ${
+															pipPosition === pos
+																? "bg-orange-500 text-white font-semibold"
+																: "text-muted-foreground"
+														}`}
+													>
+														{pos.replace("-", " ")}
+													</Button>
+												))}
+											</div>
+										)}
+									</div>
+
+									{/* Trigger Actions */}
+									<div className="flex flex-col justify-center items-end gap-2">
+										{status === "ready" && (
+											<Button
+												size="default"
+												onClick={triggerCountdown}
+												className="w-full h-10 bg-red-600 hover:bg-red-500 text-white font-bold gap-2 rounded-lg shadow-sm cursor-pointer"
+											>
+												<Circle className="size-3.5 fill-white" />
+												Start Recording
+											</Button>
+										)}
+
+										{(status === "recording" || status === "paused") && (
+											<div className="flex items-center gap-2 w-full">
+												{status === "recording" ? (
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={pauseRecording}
+														className="flex-1 h-9 rounded-lg gap-1.5 font-semibold text-xs"
+													>
+														<Pause className="size-3.5" />
+														Pause
+													</Button>
+												) : (
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={resumeRecording}
+														className="flex-1 h-9 rounded-lg border-orange-500/50 text-orange-500 gap-1.5 font-semibold text-xs"
+													>
+														<Play className="size-3.5" />
+														Resume
+													</Button>
+												)}
+
+												<Button
+													size="sm"
+													onClick={stopRecording}
+													className="flex-1 h-9 bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 rounded-lg text-xs"
+												>
+													<Square className="size-3 fill-white" />
+													Finish
+												</Button>
+											</div>
+										)}
+
+										<div className="flex items-center justify-between text-[11px] text-muted-foreground w-full">
+											<span>1080p 60fps</span>
+											<button
+												type="button"
+												onClick={() => setIsMinimized(true)}
+												className="text-orange-500 hover:underline cursor-pointer"
+											>
+												Minimize to Floating Bar
+											</button>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
-					)}
-				</div>
-			</DialogContent>
-		</Dialog>
-	</>
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }

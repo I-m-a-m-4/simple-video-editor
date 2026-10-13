@@ -350,7 +350,7 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 
 			toast.success("Voiceover added to timeline!");
 			onOpenChange(false);
-			router.push(`/editor/${targetProjectId}`);
+			router.push(`/editor?project_id=${targetProjectId}`);
 		} catch (err) {
 			console.error(err);
 			toast.error("Failed to import voiceover into editor.");

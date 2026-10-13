@@ -877,7 +877,7 @@ function ProjectItem({
 	};
 
 	const handleOpenEditor = () => {
-		router.push(`/editor/${project.id}`);
+		router.push(`/editor?project_id=${project.id}`);
 	};
 
 	return (
@@ -1013,7 +1013,7 @@ function ProjectItem({
 										className="size-4 rounded"
 									/>
 									<Link
-										href={`/editor/${project.id}`}
+										href={`/editor?project_id=${project.id}`}
 										className="relative size-10 rounded-md bg-muted/40 overflow-hidden shrink-0"
 									>
 										{project.thumbnail ? (
@@ -1030,7 +1030,7 @@ function ProjectItem({
 										)}
 									</Link>
 
-									<Link href={`/editor/${project.id}`} className="flex flex-col min-w-0 flex-1">
+									<Link href={`/editor?project_id=${project.id}`} className="flex flex-col min-w-0 flex-1">
 										<h4 className="text-xs font-semibold text-foreground truncate hover:text-orange-500">
 											{project.name}
 										</h4>
