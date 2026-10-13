@@ -36,14 +36,20 @@ import {
 	Video,
 	Activity,
 	Zap,
+	Blend,
+	Moon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { mediaTimeToSeconds } from "@/wasm";
+import { mediaTimeToSeconds, mediaTimeFromSeconds, addMediaTime } from "@/wasm";
 import {
 	analyzeTimelineWithGroq,
 	applySuggestionAction,
 	type SmartSuggestionItem,
 } from "@/ai/smart-suggestions";
+import {
+	applyTransitionBetweenClips,
+	type TransitionType,
+} from "@/transitions/apply-transition";
 import {
 	CREATIVE_FILTERS,
 	ENDING_ANIMATIONS,
@@ -84,6 +90,7 @@ export function EmptyView() {
 	const activeProject = useEditor((e) => e.project.getActive());
 	const activeScene = useEditor((e) => e.scenes.getActiveSceneOrNull());
 	const currentTime = useEditor((e) => e.playback.getCurrentTime());
+	const mainElements = activeScene?.tracks.main?.elements ?? [];
 
 	// Helper to collect all updates across tracks
 	const executeTimelineUpdate = (
@@ -151,17 +158,23 @@ export function EmptyView() {
 		setIsAnalyzing(true);
 		setAnalysisDone(false);
 		setSuggestionsApplied(false);
-		toast.loading("AI Smart Suggestions: Scanning timeline with Amber AI...", {
+		toast.loading("AI Smart Suggestions: Scanning timeline clips & audio tracks...", {
 			id: "ai-analyze",
 		});
 
 		try {
+			await new Promise((r) => setTimeout(r, 600));
+			toast.loading("AI Smart Suggestions: Evaluating color grading & scene cuts...", {
+				id: "ai-analyze",
+			});
+			await new Promise((r) => setTimeout(r, 600));
+
 			const suggestions = await analyzeTimelineWithGroq(editor, activeScene);
 			setIsAnalyzing(false);
 			setAnalysisDone(true);
 			setSmartSuggestions(suggestions);
 			toast.dismiss("ai-analyze");
-			toast.success(`Timeline analysis complete! ${suggestions.length} AI suggestions ready.`);
+			toast.success(`Timeline analysis complete! ${suggestions.length} recommendations tailored for your video.`);
 			recordTelemetryEvent(
 				"smart_suggestions",
 				"AI Smart Suggestions Amber AI Scan",
@@ -189,7 +202,119 @@ export function EmptyView() {
 		if (target.actionType === "voice_clarity") setVoiceClearer(true);
 		if (target.actionType === "cinematic_filter") setColorsConsistent(true);
 
-		toast.success(`Applied "${target.title}" on ${count} timeline clips!`);
+		let feedback = `Applied "${target.title}" on ${count} timeline clips!`;
+		if (target.actionType === "enhance_color") {
+			feedback = `Applied +25% Vibrancy & Midtone Contrast on video!`;
+		} else if (target.actionType === "crossfade_transitions") {
+			feedback = `Applied seamless crossfade transitions across cut points!`;
+		} else if (target.actionType === "add_title_hook") {
+			feedback = `Added bold hook headline to timeline!`;
+		}
+		toast.success(feedback);
+	};
+
+	const handleSplitAndAddFade = () => {
+		if (!activeScene) return;
+		const mainElements = activeScene.tracks.main?.elements ?? [];
+		if (mainElements.length === 0) {
+			toast.error("Add a video clip to the timeline first.");
+			return;
+		}
+
+		const currentSec = Number(mediaTimeToSeconds({ time: currentTime }).toFixed(3));
+		let targetElement = mainElements.find(
+			(el) =>
+				currentTime >= el.startTime &&
+				currentTime <= el.startTime + el.duration,
+		);
+
+		const mainTrackId = activeScene.tracks.main?.id ?? "main";
+
+		if (!targetElement || currentSec <= 0.5) {
+			targetElement = mainElements[0];
+			const clipDurSec = Number(mediaTimeToSeconds({ time: targetElement.duration }).toFixed(3));
+			const splitSec = clipDurSec / 2;
+			const splitTime = mediaTimeFromSeconds({ seconds: splitSec });
+			editor.playback.seek({ time: splitTime });
+			editor.timeline.splitElements({
+				elements: [{ trackId: mainTrackId, elementId: targetElement.id }],
+				splitTime,
+			});
+		} else {
+			editor.timeline.splitElements({
+				elements: [{ trackId: mainTrackId, elementId: targetElement.id }],
+				splitTime: currentTime,
+			});
+		}
+
+		setTimeout(() => {
+			const updatedScene = editor.scenes.getActiveSceneOrNull();
+			const updatedMain = updatedScene?.tracks.main?.elements ?? [];
+			const trackId = updatedScene?.tracks.main?.id ?? "main";
+			if (updatedMain.length >= 2) {
+				applyTransitionBetweenClips({
+					outgoingClip: updatedMain[0],
+					incomingClip: updatedMain[1],
+					trackId,
+					transitionType: "cross_dissolve",
+					duration: 0.8,
+					editor,
+				});
+				toast.success("Split clip and applied 0.8s Cross Dissolve fade transition!");
+			}
+		}, 60);
+	};
+
+	const handleApplyQuickTransition = (type: TransitionType = "cross_dissolve", applyToAll = false) => {
+		if (!activeScene) return;
+		const mainElements = activeScene.tracks.main?.elements ?? [];
+		const trackId = activeScene.tracks.main?.id ?? "main";
+		if (mainElements.length < 2) {
+			toast.info("Need at least 2 clips to apply a transition.");
+			return;
+		}
+
+		if (applyToAll) {
+			let count = 0;
+			for (let i = 0; i < mainElements.length - 1; i++) {
+				const success = applyTransitionBetweenClips({
+					outgoingClip: mainElements[i],
+					incomingClip: mainElements[i + 1],
+					trackId,
+					transitionType: type,
+					duration: 0.8,
+					editor,
+				});
+				if (success) count++;
+			}
+			toast.success(`Applied ${type.replace("_", " ")} fade to ${count} cuts!`);
+		} else {
+			const currentSec = Number(mediaTimeToSeconds({ time: currentTime }).toFixed(3));
+			let targetIdx = 0;
+			let minDiff = Infinity;
+			for (let i = 0; i < mainElements.length - 1; i++) {
+				const cutTime = Number(
+					mediaTimeToSeconds({
+						time: addMediaTime({ a: mainElements[i].startTime, b: mainElements[i].duration }),
+					}).toFixed(3),
+				);
+				const diff = Math.abs(currentSec - cutTime);
+				if (diff < minDiff) {
+					minDiff = diff;
+					targetIdx = i;
+				}
+			}
+
+			applyTransitionBetweenClips({
+				outgoingClip: mainElements[targetIdx],
+				incomingClip: mainElements[targetIdx + 1],
+				trackId,
+				transitionType: type,
+				duration: 0.8,
+				editor,
+			});
+			toast.success(`Applied ${type.replace("_", " ")} fade transition at cut!`);
+		}
 	};
 
 	const applyAllSmartSuggestions = () => {
@@ -562,6 +687,85 @@ export function EmptyView() {
 												<span>Apply All AI Improvements</span>
 											</>
 										)}
+									</Button>
+								</div>
+							)}
+						</div>
+
+						{/* Scene Transitions & Fade Section */}
+						<div className="rounded-xl border border-border/80 bg-card/60 p-3.5 space-y-3 shadow-xs">
+							<div className="flex items-center justify-between">
+								<span className="text-xs font-bold text-foreground flex items-center gap-1.5 font-clash">
+									<Blend className="size-3.5 text-orange-500" />
+									Transitions &amp; Fade Effects
+								</span>
+								<Badge variant="outline" className="text-[10px] px-1.5 py-0 text-orange-500 border-orange-500/30">
+									{mainElements.length >= 2 ? `${mainElements.length} Clips • ${mainElements.length - 1} Cuts` : "1 Clip"}
+								</Badge>
+							</div>
+							<p className="text-[11px] text-muted-foreground leading-tight">
+								{mainElements.length >= 2
+									? "Smoothly transition between scenes with cinematic dissolve or fades."
+									: "Split clip or add another scene to blend cuts with cross dissolve."}
+							</p>
+
+							{mainElements.length >= 2 ? (
+								<div className="space-y-2.5">
+									<div className="grid grid-cols-2 gap-2">
+										{[
+											{ id: "cross_dissolve", name: "Cross Dissolve", icon: Blend, desc: "Smooth blend" },
+											{ id: "dip_to_black", name: "Dip to Black", icon: Moon, desc: "Classic fade" },
+											{ id: "dip_to_white", name: "Flash White", icon: Zap, desc: "Light flash" },
+											{ id: "zoom_in", name: "Whip Zoom", icon: Maximize2, desc: "Punch in" },
+										].map((trans) => {
+											const Icon = trans.icon;
+											return (
+												<button
+													key={trans.id}
+													type="button"
+													onClick={() => handleApplyQuickTransition(trans.id as any)}
+													className="p-2 rounded-lg bg-muted/30 border border-border/60 hover:border-orange-500/40 hover:bg-muted/60 transition-all text-left flex flex-col gap-1 cursor-pointer group"
+												>
+													<div className="flex items-center gap-1.5 text-xs font-semibold text-foreground group-hover:text-orange-500">
+														<Icon className="size-3.5 text-orange-500" />
+														<span>{trans.name}</span>
+													</div>
+													<span className="text-[10px] text-muted-foreground">{trans.desc}</span>
+												</button>
+											);
+										})}
+									</div>
+
+									<div className="flex items-center justify-between gap-2 pt-1">
+										<Button
+											size="sm"
+											variant="outline"
+											onClick={() => handleApplyQuickTransition("cross_dissolve", false)}
+											className="flex-1 h-7 text-[10px] rounded-lg border-border cursor-pointer"
+										>
+											Fade Current Cut (0.8s)
+										</Button>
+										<Button
+											size="sm"
+											onClick={() => handleApplyQuickTransition("cross_dissolve", true)}
+											className="flex-1 h-7 text-[10px] bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold cursor-pointer"
+										>
+											Fade All Cuts
+										</Button>
+									</div>
+								</div>
+							) : (
+								<div className="p-2.5 rounded-lg bg-muted/30 border border-border/60 flex flex-col gap-2">
+									<p className="text-[11px] text-muted-foreground leading-relaxed">
+										Currently 1 clip on timeline. You can split this clip at the playhead to create 2 scenes and immediately add a fade transition between them:
+									</p>
+									<Button
+										size="sm"
+										onClick={handleSplitAndAddFade}
+										className="w-full h-8 text-xs bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+									>
+										<Blend className="size-3.5" />
+										<span>Split at Playhead &amp; Add Fade Transition</span>
 									</Button>
 								</div>
 							)}

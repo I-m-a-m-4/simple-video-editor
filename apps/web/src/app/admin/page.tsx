@@ -38,6 +38,11 @@ import {
 	Check,
 	X,
 	FileText,
+	KeyRound,
+	Eye,
+	EyeOff,
+	Save,
+	RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -59,7 +64,8 @@ import {
 	type StorageQuotaStatus,
 } from "@/services/storage/quota";
 import { useProStore, isUserAdmin } from "@/stores/pro-store";
-import { db } from "@/services/firebase";
+import { db, saveSystemAiConfig, loadSystemAiConfig } from "@/services/firebase";
+import { useAiStore } from "@/ai/store";
 import {
 	collection,
 	doc,
@@ -130,6 +136,48 @@ export default function AdminPage() {
 	const [groqPingMs, setGroqPingMs] = useState<number | null>(null);
 	const [isTestingGroq, setIsTestingGroq] = useState(false);
 	const [firestoreConnected, setFirestoreConnected] = useState<boolean | null>(null);
+
+	// Groq AI API Key management
+	const [adminGroqKey, setAdminGroqKey] = useState<string>("");
+	const [showAdminGroqKey, setShowAdminGroqKey] = useState<boolean>(false);
+	const [adminGroqModel, setAdminGroqModel] = useState<string>("llama-3.3-70b-versatile");
+	const [groqKeySource, setGroqKeySource] = useState<"custom_firestore" | "custom_local" | "env" | "none">("none");
+	const [isSavingGroqKey, setIsSavingGroqKey] = useState<boolean>(false);
+
+	// Load Groq AI config on mount
+	useEffect(() => {
+		const initGroqState = async () => {
+			try {
+				const cloudCfg = await loadSystemAiConfig();
+				if (cloudCfg?.groqApiKey) {
+					setAdminGroqKey(cloudCfg.groqApiKey);
+					if (cloudCfg.model) setAdminGroqModel(cloudCfg.model);
+					setGroqKeySource("custom_firestore");
+					return;
+				}
+			} catch {}
+
+			const localKey = typeof window !== "undefined" ? localStorage.getItem("ambercut_custom_groq_key") : null;
+			const storeKey = useAiStore.getState().apiKey;
+			const storeModel = useAiStore.getState().model;
+			if (storeModel) setAdminGroqModel(storeModel);
+
+			if (localKey) {
+				setAdminGroqKey(localKey);
+				setGroqKeySource("custom_local");
+			} else if (storeKey && storeKey !== process.env.NEXT_PUBLIC_GROQ_API_KEY) {
+				setAdminGroqKey(storeKey);
+				setGroqKeySource("custom_local");
+			} else if (process.env.NEXT_PUBLIC_GROQ_API_KEY) {
+				setAdminGroqKey(process.env.NEXT_PUBLIC_GROQ_API_KEY);
+				setGroqKeySource("env");
+			} else {
+				setAdminGroqKey("");
+				setGroqKeySource("none");
+			}
+		};
+		initGroqState();
+	}, []);
 
 	// Check local admin session on mount
 	useEffect(() => {
@@ -256,23 +304,21 @@ export default function AdminPage() {
 	}, [isGmail, loadAllDashboardData]);
 
 	// Live Groq API Latency Test
-	const testGroqConnection = async () => {
-		setIsTestingGroq(true);
-		setGroqPingMs(null);
-		const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
-
-		if (!apiKey) {
-			toast.error("NEXT_PUBLIC_GROQ_API_KEY is not configured.");
-			setIsTestingGroq(false);
+	const testGroqConnection = async (customKey?: string) => {
+		const keyToTest = (customKey !== undefined ? customKey : adminGroqKey).trim() || process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+		if (!keyToTest) {
+			toast.error("Please enter a Groq API key (starts with gsk_) to test.");
 			return;
 		}
 
+		setIsTestingGroq(true);
+		setGroqPingMs(null);
 		const startTime = performance.now();
 		try {
 			const res = await fetch("https://api.groq.com/openai/v1/models", {
 				method: "GET",
 				headers: {
-					Authorization: `Bearer ${apiKey}`,
+					Authorization: `Bearer ${keyToTest}`,
 					"Content-Type": "application/json",
 				},
 			});
@@ -282,14 +328,78 @@ export default function AdminPage() {
 
 			if (res.ok) {
 				setGroqPingMs(latency);
-				toast.success(`Groq LPU Active: ${latency}ms latency`);
+				toast.success(`Groq LPU Connected: ${latency}ms latency`);
 			} else {
-				toast.error(`Groq API returned status ${res.status}`);
+				const errorData = await res.json().catch(() => ({}));
+				toast.error(`Groq API returned error ${res.status}: ${errorData?.error?.message || "Invalid API key"}`);
 			}
 		} catch (err: any) {
 			toast.error(`Groq ping failed: ${err?.message || "Network error"}`);
 		} finally {
 			setIsTestingGroq(false);
+		}
+	};
+
+	// Save and Activate Groq AI API Key
+	const handleSaveGroqConfig = async () => {
+		const trimmedKey = adminGroqKey.trim();
+		if (!trimmedKey) {
+			toast.error("Please enter a valid Groq API key (starts with gsk_).");
+			return;
+		}
+
+		setIsSavingGroqKey(true);
+		try {
+			// 1. Update zustand store
+			useAiStore.getState().setApiKey(trimmedKey);
+			useAiStore.getState().setModel(adminGroqModel);
+
+			// 2. Save in browser localStorage
+			if (typeof window !== "undefined") {
+				localStorage.setItem("ambercut_custom_groq_key", trimmedKey);
+			}
+
+			// 3. Save in Firestore system_settings/ai for all users & machines
+			await saveSystemAiConfig({
+				groqApiKey: trimmedKey,
+				model: adminGroqModel,
+				updatedBy: currentEmail || "admin",
+			});
+
+			setGroqKeySource("custom_firestore");
+			toast.success("Groq AI Key saved! Active across all editor sessions.");
+			await testGroqConnection(trimmedKey);
+		} catch (err: any) {
+			toast.error(`Failed to save AI configuration: ${err?.message || err}`);
+		} finally {
+			setIsSavingGroqKey(false);
+		}
+	};
+
+	// Reset to Default (.env)
+	const handleResetGroqConfig = async () => {
+		const envKey = process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+		setAdminGroqKey(envKey);
+		setAdminGroqModel("llama-3.3-70b-versatile");
+
+		if (typeof window !== "undefined") {
+			localStorage.removeItem("ambercut_custom_groq_key");
+		}
+		useAiStore.getState().setApiKey(envKey);
+		useAiStore.getState().setModel("llama-3.3-70b-versatile");
+
+		try {
+			await saveSystemAiConfig({
+				groqApiKey: "",
+				model: "llama-3.3-70b-versatile",
+				updatedBy: currentEmail || "admin",
+			});
+		} catch {}
+
+		setGroqKeySource(envKey ? "env" : "none");
+		toast.success("Reset to default environment Groq API key.");
+		if (envKey) {
+			testGroqConnection(envKey);
 		}
 	};
 
@@ -1034,6 +1144,61 @@ export default function AdminPage() {
 							</div>
 						</div>
 
+						{/* Quick Groq AI Status Banner */}
+						<div className="rounded-xl border border-border bg-card p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+							<div className="flex items-center gap-3">
+								<div className="size-10 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500 flex items-center justify-center shrink-0">
+									<Cpu className="size-5" />
+								</div>
+								<div className="space-y-0.5">
+									<div className="flex items-center gap-2">
+										<span className="text-sm font-bold font-clash text-foreground">
+											Groq LPU Neural Copilot &amp; Suggestions
+										</span>
+										{groqKeySource === "custom_firestore" && (
+											<Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">
+												Cloud Synced
+											</Badge>
+										)}
+										{groqKeySource === "custom_local" && (
+											<Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px]">
+												Browser Custom
+											</Badge>
+										)}
+										{groqKeySource === "env" && (
+											<Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-[10px]">
+												Environment Key
+											</Badge>
+										)}
+										{groqKeySource === "none" && (
+											<Badge variant="destructive" className="text-[10px]">
+												No Key Set
+											</Badge>
+										)}
+										{groqPingMs !== null && (
+											<span className="text-xs text-emerald-500 font-mono font-semibold">
+												⚡ {groqPingMs}ms
+											</span>
+										)}
+									</div>
+									<p className="text-xs text-muted-foreground">
+										Active model: <span className="font-mono text-foreground font-medium">{adminGroqModel}</span> • Key:{" "}
+										<span className="font-mono text-muted-foreground">
+											{adminGroqKey ? `${adminGroqKey.slice(0, 8)}••••••••` : "Not configured"}
+										</span>
+									</p>
+								</div>
+							</div>
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={() => setActiveTab("system")}
+								className="h-8 text-xs text-orange-500 hover:text-orange-600 border-orange-500/30 hover:bg-orange-500/10 gap-1.5 shrink-0"
+							>
+								<KeyRound className="size-3.5" /> Change Groq Key &amp; Settings →
+							</Button>
+						</div>
+
 						{/* Real Telemetry Feature Counts */}
 						<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
 							<div className="flex items-center justify-between">
@@ -1427,6 +1592,169 @@ export default function AdminPage() {
 				{/* SYSTEM & DIAGNOSTICS TAB */}
 				{activeTab === "system" && (
 					<div className="space-y-6">
+						{/* Groq AI Engine & Neural Copilot Configuration Card */}
+						<div className="rounded-xl border border-border bg-card p-5 space-y-5 shadow-xs">
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+								<div className="space-y-1">
+									<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
+										<Cpu className="size-4 text-orange-500" />
+										Groq AI Engine &amp; Neural Copilot Configuration
+									</h2>
+									<p className="text-xs text-muted-foreground">
+										Configure the active Groq AI API key and model used by Amber AI and Smart Suggestions across all editor sessions.
+									</p>
+								</div>
+								<div className="flex flex-wrap items-center gap-2">
+									{groqKeySource === "custom_firestore" && (
+										<Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[11px] flex items-center gap-1">
+											<CheckCircle2 className="size-3" /> Cloud Synced (Firestore)
+										</Badge>
+									)}
+									{groqKeySource === "custom_local" && (
+										<Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[11px] flex items-center gap-1">
+											<Sparkles className="size-3" /> Browser Custom Key
+										</Badge>
+									)}
+									{groqKeySource === "env" && (
+										<Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-[11px] flex items-center gap-1">
+											<Database className="size-3" /> Environment (.env)
+										</Badge>
+									)}
+									{groqKeySource === "none" && (
+										<Badge variant="destructive" className="text-[11px] flex items-center gap-1">
+											<AlertTriangle className="size-3" /> No Key Configured
+										</Badge>
+									)}
+									{groqPingMs !== null && (
+										<Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[11px] font-mono">
+											⚡ {groqPingMs}ms
+										</Badge>
+									)}
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+								{/* API Key Input */}
+								<div className="space-y-2">
+									<div className="flex items-center justify-between">
+										<label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+											<KeyRound className="size-3.5 text-orange-500" /> Groq API Key
+										</label>
+										<span className="text-[11px] text-muted-foreground font-mono">
+											Starts with gsk_
+										</span>
+									</div>
+									<div className="relative">
+										<Input
+											type={showAdminGroqKey ? "text" : "password"}
+											placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+											value={adminGroqKey}
+											onChange={(e) => setAdminGroqKey(e.target.value)}
+											className="h-9 text-xs font-mono pr-10 bg-background"
+										/>
+										<button
+											type="button"
+											onClick={() => setShowAdminGroqKey(!showAdminGroqKey)}
+											className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+											title={showAdminGroqKey ? "Hide API Key" : "Show API Key"}
+										>
+											{showAdminGroqKey ? (
+												<EyeOff className="size-4" />
+											) : (
+												<Eye className="size-4" />
+											)}
+										</button>
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										Create or copy your API key from{" "}
+										<a
+											href="https://console.groq.com/keys"
+											target="_blank"
+											rel="noreferrer"
+											className="text-orange-500 hover:underline inline-flex items-center gap-0.5 font-medium"
+										>
+											console.groq.com/keys <ArrowUpRight className="size-2.5" />
+										</a>
+										. Saved keys persist in cloud and browser memory.
+									</p>
+								</div>
+
+								{/* Model Selector */}
+								<div className="space-y-2">
+									<label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+										<Cpu className="size-3.5 text-orange-500" /> Default AI Model
+									</label>
+									<select
+										value={adminGroqModel}
+										onChange={(e) => setAdminGroqModel(e.target.value)}
+										className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+									>
+										<option value="llama-3.3-70b-versatile">
+											Amber 70B Fast (llama-3.3-70b-versatile) — Recommended
+										</option>
+										<option value="llama-3.1-8b-instant">
+											Amber 8B Instant (llama-3.1-8b-instant) — Ultra Fast
+										</option>
+										<option value="openai/gpt-oss-120b">
+											Amber 120B Flagship (openai/gpt-oss-120b)
+										</option>
+										<option value="openai/gpt-oss-20b">
+											Amber 20B Fast (openai/gpt-oss-20b)
+										</option>
+										<option value="qwen/qwen3.8-27b">
+											Amber Qwen 27B Reasoning (qwen/qwen3.8-27b)
+										</option>
+									</select>
+									<p className="text-[11px] text-muted-foreground">
+										Selects the high-speed LPU model used for chat copilot, split analysis, audio cleanup, and motion graphics.
+									</p>
+								</div>
+							</div>
+
+							{/* Actions Bar */}
+							<div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/60">
+								<div className="flex items-center gap-2">
+									<Button
+										size="sm"
+										onClick={handleSaveGroqConfig}
+										disabled={isSavingGroqKey || isTestingGroq}
+										className="bg-orange-500 hover:bg-orange-600 text-white h-8 text-xs gap-1.5 shadow-xs"
+									>
+										{isSavingGroqKey ? (
+											<RefreshCw className="size-3.5 animate-spin" />
+										) : (
+											<Save className="size-3.5" />
+										)}
+										Save &amp; Apply AI Key
+									</Button>
+
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={() => testGroqConnection()}
+										disabled={isTestingGroq}
+										className="h-8 text-xs gap-1.5"
+									>
+										{isTestingGroq ? (
+											<RefreshCw className="size-3.5 animate-spin" />
+										) : (
+											<Zap className="size-3.5 text-orange-500" />
+										)}
+										Test Live Connection
+									</Button>
+								</div>
+
+								<Button
+									size="sm"
+									variant="ghost"
+									onClick={handleResetGroqConfig}
+									className="text-xs text-muted-foreground hover:text-foreground h-8 gap-1.5"
+								>
+									<RotateCcw className="size-3" /> Reset to .env Default
+								</Button>
+							</div>
+						</div>
+
 						<div className="rounded-xl border border-border bg-card p-5 space-y-4 shadow-xs">
 							<h2 className="text-base font-bold font-clash text-foreground flex items-center gap-2">
 								<Cpu className="size-4 text-orange-500" />
@@ -1447,12 +1775,12 @@ export default function AdminPage() {
 										)}
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										Fast inference with Llama-3.3-70b-versatile and 21 editor tools.
+										Fast inference with {adminGroqModel} and 21 editor tools.
 									</p>
 									<Button
 										size="sm"
 										variant="outline"
-										onClick={testGroqConnection}
+										onClick={() => testGroqConnection()}
 										disabled={isTestingGroq}
 										className="h-7 text-[10px] w-full mt-2"
 									>

@@ -9,6 +9,7 @@ import {
 	saveChatMessages,
 	loadChatMessages,
 	clearChatMessages,
+	loadSystemAiConfig,
 } from "@/services/firebase";
 
 interface AiState extends AiSettings {
@@ -71,7 +72,17 @@ export const useAiStore = create<AiState>()(
 			activeToolName: null,
 			projectId: null,
 
-			setApiKey: (apiKey) => set({ apiKey: apiKey.trim() }),
+			setApiKey: (apiKey) => {
+				const trimmed = apiKey.trim();
+				if (typeof window !== "undefined") {
+					if (trimmed) {
+						localStorage.setItem("ambercut_custom_groq_key", trimmed);
+					} else {
+						localStorage.removeItem("ambercut_custom_groq_key");
+					}
+				}
+				set({ apiKey: trimmed });
+			},
 			setModel: (model) => set({ model }),
 			setSystemInstructions: (systemInstructions) => set({ systemInstructions }),
 			addMessage: (message) => {
@@ -165,6 +176,22 @@ export const useAiStore = create<AiState>()(
 					}
 					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {
 						state.setSystemInstructions(DEFAULT_SYSTEM_INSTRUCTIONS);
+					}
+					if (typeof window !== "undefined") {
+						const customKey = localStorage.getItem("ambercut_custom_groq_key");
+						if (customKey && customKey !== state.apiKey) {
+							state.setApiKey(customKey);
+						}
+						loadSystemAiConfig()
+							.then((cfg) => {
+								if (cfg?.groqApiKey) {
+									state.setApiKey(cfg.groqApiKey);
+								}
+								if (cfg?.model) {
+									state.setModel(cfg.model);
+								}
+							})
+							.catch(() => {});
 					}
 				}
 			},

@@ -191,6 +191,8 @@ function PreviewCanvas({
 		outputCanvas.style.display = "block";
 		outputCanvas.style.width = "100%";
 		outputCanvas.style.height = "100%";
+		outputCanvas.style.filter = activeCssFilter;
+		outputCanvas.style.transition = "filter 0.25s ease-out";
 		mount.appendChild(outputCanvas);
 		return () => {
 			if (outputCanvas.parentElement === mount) {
@@ -198,6 +200,17 @@ function PreviewCanvas({
 			}
 		};
 	}, [renderer]);
+
+	useEffect(() => {
+		const outputCanvas = renderer.getOutputCanvas();
+		if (outputCanvas) {
+			outputCanvas.style.filter = activeCssFilter;
+			outputCanvas.style.transition = "filter 0.25s ease-out";
+		}
+		// Invalidate last rendered frame cache so canvas re-renders immediately while paused
+		lastFrameRef.current = -1;
+		lastSceneRef.current = null;
+	}, [renderer, activeCssFilter]);
 
 	const render = useCallback(() => {
 		if (!renderTree || renderingRef.current) return;

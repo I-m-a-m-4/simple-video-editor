@@ -48,6 +48,7 @@ import { VideoToShortsModal } from "@/components/shorts/video-to-shorts-modal";
 import { ProUpgradeModal } from "@/components/editor/pro-upgrade-modal";
 import { useProStore } from "@/stores/pro-store";
 import { useAuth } from "@/auth/auth-context";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
 	Plus,
 	Video,
@@ -79,6 +80,7 @@ import {
 	ChevronRight,
 	Sun,
 	Moon,
+	Menu,
 } from "lucide-react";
 
 const formatProjectDuration = formatMediaDuration;
@@ -148,9 +150,242 @@ export default function ProjectsPage() {
 		setTheme(theme === "dark" ? "light" : "dark");
 	};
 
+	const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+	const renderSidebarContent = (onNavigate?: () => void) => (
+		<>
+			<div className="flex flex-col gap-5">
+				{/* Brand & User Profile Card */}
+				<div className="flex flex-col gap-3">
+					<Link
+						href="/"
+						onClick={onNavigate}
+						className="flex items-center gap-2.5 px-1.5 cursor-pointer"
+					>
+						<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-orange-500/20">
+							AC
+						</div>
+						<span className="font-bold text-base tracking-tight cursor-pointer">
+							AmberCut
+						</span>
+					</Link>
+
+					{/* User Pro Card */}
+					<div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between gap-2 mt-1 hover:border-orange-500/30 transition-colors">
+						<div className="flex items-center gap-2.5 min-w-0">
+							{user?.image ? (
+								<Image
+									src={user.image}
+									alt={displayName}
+									width={32}
+									height={32}
+									className="size-8 rounded-full object-cover ring-1 ring-orange-500/30 shrink-0"
+								/>
+							) : (
+								<div className="size-8 rounded-full bg-gradient-to-tr from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm shadow-orange-500/20">
+									{userInitials}
+								</div>
+							)}
+							<div className="flex flex-col min-w-0">
+								<span className="text-xs font-semibold truncate text-foreground">
+									{displayName}
+								</span>
+								<span className="text-[10px] text-muted-foreground truncate">
+									{isPro ? "Pro Member" : "Free Creator"}
+								</span>
+							</div>
+						</div>
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								openProModal();
+							}}
+							className={`px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
+								isPro
+									? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border border-emerald-500/30"
+									: "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white"
+							}`}
+						>
+							<Crown className="size-3" />
+							{isPro ? "PRO" : "Upgrade"}
+						</button>
+					</div>
+				</div>
+
+				{/* Navigation Groups */}
+				<div className="flex flex-col gap-4">
+					{/* Video Editing */}
+					<div className="flex flex-col gap-1">
+						<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2.5">
+							Video editing
+						</span>
+						<Link
+							href="/projects"
+							onClick={onNavigate}
+							className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 font-semibold text-xs transition-colors cursor-pointer"
+						>
+							<Home className="size-4 text-orange-500" />
+							<span>Home</span>
+						</Link>
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								toast.info("Templates coming soon!");
+							}}
+							className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
+						>
+							<LayoutTemplate className="size-4" />
+							<span>Templates</span>
+						</button>
+					</div>
+
+					{/* AI Tools Hub */}
+					<div className="flex flex-col gap-1">
+						<div className="flex items-center justify-between px-2.5">
+							<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+								AI Tools
+							</span>
+							<span className="text-[9px] bg-orange-500/15 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded font-bold">
+								NEW
+							</span>
+						</div>
+
+						{/* Screen Recorder Trigger */}
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								setIsRecorderOpen(true);
+							}}
+							className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+						>
+							<div className="flex items-center gap-2.5">
+								<Monitor className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
+								<span>Record Screen</span>
+							</div>
+							<Badge className="bg-red-500/15 text-red-500 text-[9px] h-4 px-1 font-semibold border-none rounded">
+								PiP
+							</Badge>
+						</button>
+
+						{/* Text to Speech Trigger */}
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								setIsTtsOpen(true);
+							}}
+							className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+						>
+							<div className="flex items-center gap-2.5">
+								<Volume2 className="size-4 text-amber-500 group-hover:scale-105 transition-transform" />
+								<span>Text to Speech</span>
+							</div>
+							<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 text-[9px] h-4 px-1 font-semibold border-none rounded">
+								AI
+							</Badge>
+						</button>
+
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								setIsShortsModalOpen(true);
+							}}
+							className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
+						>
+							<Scissors className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
+							<span>Video to Shorts</span>
+						</button>
+
+						<button
+							type="button"
+							onClick={() => {
+								onNavigate?.();
+								toast.info("Select audio file in the editor to run voice separation.");
+							}}
+							className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
+						>
+							<Mic className="size-4" />
+							<span>Voice Separation</span>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			{/* Bottom Sidebar Promos & Theme Toggle */}
+			<div className="flex flex-col gap-2.5 pt-4">
+				{/* Theme Toggle Button */}
+				<div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border border-border">
+					<span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+						{mounted && theme === "dark" ? (
+							<Moon className="size-3.5 text-orange-400" />
+						) : (
+							<Sun className="size-3.5 text-amber-500" />
+						)}
+						<span>{mounted && theme === "dark" ? "Dark Mode" : "Light Mode"}</span>
+					</span>
+					<Button
+						variant="ghost"
+						size="icon"
+						onClick={toggleTheme}
+						className="h-6 w-6 text-foreground hover:bg-background rounded cursor-pointer"
+						aria-label="Toggle theme"
+					>
+						{mounted && theme === "dark" ? (
+							<Sun className="size-3.5 text-amber-500" />
+						) : (
+							<Moon className="size-3.5 text-orange-400" />
+						)}
+					</Button>
+				</div>
+
+				{/* AmberCut Pro Subscription Card */}
+				<div className="p-3.5 rounded-xl bg-gradient-to-br from-orange-500/15 via-amber-500/5 to-transparent border border-orange-500/25 flex flex-col gap-2 relative overflow-hidden group shadow-xs">
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-1.5">
+							<div className="size-6 rounded-lg bg-orange-500/20 text-orange-500 flex items-center justify-center">
+								<Sparkles className="size-3.5" />
+							</div>
+							<span className="text-xs font-bold text-foreground">AmberCut Pro</span>
+						</div>
+						<Badge className="bg-orange-500 text-white text-[9px] h-4 px-1.5 font-bold border-none rounded">
+							{isPro ? "ACTIVE" : "PRO"}
+						</Badge>
+					</div>
+					<p className="text-[11px] text-muted-foreground leading-relaxed">
+						{isPro
+							? "You have full access to 4K 60fps exports, AI captions & cloud sync."
+							: "Upgrade for 4K 60fps exports, AI captions, voice separation & unlimited cloud sync."}
+					</p>
+					<Button
+						size="sm"
+						onClick={() => {
+							onNavigate?.();
+							openProModal();
+						}}
+						className="w-full h-7 text-[11px] font-semibold bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-xs rounded-lg cursor-pointer"
+					>
+						{isPro ? "Manage Subscription" : "Upgrade to Pro"}
+					</Button>
+				</div>
+
+				<div className="flex items-center justify-between px-1.5 text-[10px] text-muted-foreground">
+					<span className="flex items-center gap-1.5">
+						<HardDrive className="size-3 text-orange-500" />
+						Device Storage
+					</span>
+					<span className="text-emerald-500 font-medium">Ready</span>
+				</div>
+			</div>
+		</>
+	);
+
 	return (
 		<AuthGuard fallbackMessage="Please sign in or create an account to view and create video projects.">
-			<div className="min-h-screen bg-background text-foreground flex transition-colors duration-200">
+			<div className="h-screen bg-background text-foreground flex overflow-hidden transition-colors duration-200">
 				<MigrationDialog />
 				<StoragePersistenceDialog />
 				<ChangelogNotification />
@@ -176,212 +411,32 @@ export default function ProjectsPage() {
 				/>
 				<ProUpgradeModal />
 
-				{/* Left Sidebar (Orange Brand & Adaptive Theme) */}
-				<aside className="w-60 bg-card border-r border-border flex flex-col shrink-0 min-h-screen p-4 justify-between hidden md:flex">
-					<div className="flex flex-col gap-5">
-						{/* Brand & User Profile Card */}
-						<div className="flex flex-col gap-3">
-							<Link href="/" className="flex items-center gap-2.5 px-1.5 cursor-pointer">
-								<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-orange-500/20">
-									AC
-								</div>
-								<span className="font-bold text-base tracking-tight cursor-pointer">
-									AmberCut
-								</span>
-							</Link>
+				{/* Mobile Drawer Sidebar */}
+				<Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
+					<SheetContent side="left" className="w-64 p-4 flex flex-col justify-between overflow-y-auto bg-card">
+						{renderSidebarContent(() => setIsMobileSidebarOpen(false))}
+					</SheetContent>
+				</Sheet>
 
-							{/* User Pro Card */}
-							<div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between gap-2 mt-1 hover:border-orange-500/30 transition-colors">
-								<div className="flex items-center gap-2.5 min-w-0">
-									{user?.image ? (
-										<Image
-											src={user.image}
-											alt={displayName}
-											width={32}
-											height={32}
-											className="size-8 rounded-full object-cover ring-1 ring-orange-500/30 shrink-0"
-										/>
-									) : (
-										<div className="size-8 rounded-full bg-gradient-to-tr from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm shadow-orange-500/20">
-											{userInitials}
-										</div>
-									)}
-									<div className="flex flex-col min-w-0">
-										<span className="text-xs font-semibold truncate text-foreground">
-											{displayName}
-										</span>
-										<span className="text-[10px] text-muted-foreground truncate">
-											{isPro ? "Pro Member" : "Free Creator"}
-										</span>
-									</div>
-								</div>
-								<button
-									type="button"
-									onClick={openProModal}
-									className={`px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
-										isPro
-											? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border border-emerald-500/30"
-											: "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white"
-									}`}
-								>
-									<Crown className="size-3" />
-									{isPro ? "PRO" : "Upgrade"}
-								</button>
-							</div>
-						</div>
-
-						{/* Navigation Groups */}
-						<div className="flex flex-col gap-4">
-							{/* Video Editing */}
-							<div className="flex flex-col gap-1">
-								<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2.5">
-									Video editing
-								</span>
-								<Link
-									href="/projects"
-									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 font-semibold text-xs transition-colors cursor-pointer"
-								>
-									<Home className="size-4 text-orange-500" />
-									<span>Home</span>
-								</Link>
-								<button
-									type="button"
-									onClick={() => toast.info("Templates coming soon!")}
-									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
-								>
-									<LayoutTemplate className="size-4" />
-									<span>Templates</span>
-								</button>
-							</div>
-
-							{/* AI Tools Hub */}
-							<div className="flex flex-col gap-1">
-								<div className="flex items-center justify-between px-2.5">
-									<span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-										AI Tools
-									</span>
-									<span className="text-[9px] bg-orange-500/15 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded font-bold">
-										NEW
-									</span>
-								</div>
-
-								{/* Screen Recorder Trigger */}
-								<button
-									type="button"
-									onClick={() => setIsRecorderOpen(true)}
-									className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
-								>
-									<div className="flex items-center gap-2.5">
-										<Monitor className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
-										<span>Record Screen</span>
-									</div>
-									<Badge className="bg-red-500/15 text-red-500 text-[9px] h-4 px-1 font-semibold border-none rounded">
-										PiP
-									</Badge>
-								</button>
-
-								{/* Text to Speech Trigger */}
-								<button
-									type="button"
-									onClick={() => setIsTtsOpen(true)}
-									className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
-								>
-									<div className="flex items-center gap-2.5">
-										<Volume2 className="size-4 text-amber-500 group-hover:scale-105 transition-transform" />
-										<span>Text to Speech</span>
-									</div>
-									<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 text-[9px] h-4 px-1 font-semibold border-none rounded">
-										AI
-									</Badge>
-								</button>
-
-								<button
-									type="button"
-									onClick={() => setIsShortsModalOpen(true)}
-									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-foreground/80 font-medium text-xs hover:bg-muted hover:text-foreground transition-colors group text-left cursor-pointer"
-								>
-									<Scissors className="size-4 text-orange-500 group-hover:scale-105 transition-transform" />
-									<span>Video to Shorts</span>
-								</button>
-
-								<button
-									type="button"
-									onClick={() =>
-										toast.info("Select audio file in the editor to run voice separation.")
-									}
-									className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-muted-foreground font-medium text-xs hover:bg-muted hover:text-foreground transition-colors text-left cursor-pointer"
-								>
-									<Mic className="size-4" />
-									<span>Voice Separation</span>
-								</button>
-							</div>
-						</div>
-					</div>
-
-					{/* Bottom Sidebar Promos & Theme Toggle */}
-					<div className="flex flex-col gap-2.5">
-						{/* Theme Toggle Button */}
-						<div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border border-border">
-							<span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-								{mounted && theme === "dark" ? (
-									<Moon className="size-3.5 text-orange-400" />
-								) : (
-									<Sun className="size-3.5 text-amber-500" />
-								)}
-								<span>{mounted && theme === "dark" ? "Dark Mode" : "Light Mode"}</span>
-							</span>
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={toggleTheme}
-								className="h-6 px-2 text-[10px] font-semibold text-foreground hover:bg-background rounded cursor-pointer"
-							>
-								Switch
-							</Button>
-						</div>
-
-						{/* AmberCut Pro Subscription Card */}
-						<div className="p-3.5 rounded-xl bg-gradient-to-br from-orange-500/15 via-amber-500/5 to-transparent border border-orange-500/25 flex flex-col gap-2 relative overflow-hidden group shadow-xs">
-							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-1.5">
-									<div className="size-6 rounded-lg bg-orange-500/20 text-orange-500 flex items-center justify-center">
-										<Sparkles className="size-3.5" />
-									</div>
-									<span className="text-xs font-bold text-foreground">AmberCut Pro</span>
-								</div>
-								<Badge className="bg-orange-500 text-white text-[9px] h-4 px-1.5 font-bold border-none rounded">
-									{isPro ? "ACTIVE" : "PRO"}
-								</Badge>
-							</div>
-							<p className="text-[11px] text-muted-foreground leading-relaxed">
-								{isPro
-									? "You have full access to 4K 60fps exports, AI captions & cloud sync."
-									: "Upgrade for 4K 60fps exports, AI captions, voice separation & unlimited cloud sync."}
-							</p>
-							<Button
-								size="sm"
-								onClick={openProModal}
-								className="w-full h-7 text-[11px] font-semibold bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-xs rounded-lg cursor-pointer"
-							>
-								{isPro ? "Manage Subscription" : "Upgrade to Pro"}
-							</Button>
-						</div>
-
-						<div className="flex items-center justify-between px-1.5 text-[10px] text-muted-foreground">
-							<span className="flex items-center gap-1.5">
-								<HardDrive className="size-3 text-orange-500" />
-								Device Storage
-							</span>
-							<span className="text-emerald-500 font-medium">Ready</span>
-						</div>
-					</div>
+				{/* Fixed Left Sidebar (Desktop) */}
+				<aside className="w-60 bg-card border-r border-border flex flex-col shrink-0 h-screen p-4 justify-between hidden md:flex overflow-y-auto sticky top-0 z-30 select-none">
+					{renderSidebarContent()}
 				</aside>
 
 				{/* Main Content Dashboard */}
-				<div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+				<div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
 					{/* Top Header Bar with Theme Switcher */}
 					<header className="sticky top-0 z-20 px-3 sm:px-6 py-3 bg-background/90 backdrop-blur-md border-b border-border flex items-center justify-between gap-2 sm:gap-4">
 						<div className="flex items-center gap-2 text-xs shrink-0">
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={() => setIsMobileSidebarOpen(true)}
+								className="md:hidden size-8 -ml-1 text-muted-foreground hover:text-foreground"
+								aria-label="Open sidebar"
+							>
+								<Menu className="size-4" />
+							</Button>
 							<span className="font-semibold text-foreground">Home</span>
 							<span className="text-muted-foreground/40">/</span>
 							<span className="text-muted-foreground">Projects</span>

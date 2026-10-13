@@ -9,7 +9,6 @@ import {
 	ExternalLink,
 	Eye,
 	EyeOff,
-	Key,
 	Play,
 	RotateCcw,
 	Send,
@@ -119,20 +118,6 @@ export function AiAssistantView() {
 			title="Amber AI Assistant"
 			actions={
 				<div className="flex items-center gap-1">
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								variant="ghost"
-								size="icon"
-								className="h-7 w-7 text-muted-foreground hover:text-foreground"
-								onClick={() => setShowSettings(!showSettings)}
-							>
-								<Key className={cn("size-3.5", apiKey && "text-primary")} />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent side="bottom">Amber AI Settings</TooltipContent>
-					</Tooltip>
-
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<Button

@@ -209,3 +209,49 @@ export async function loadProjectFromCloud(
 		return null;
 	}
 }
+
+/**
+ * Save global AI system settings (Groq API Key, Model, etc.) to Firestore
+ */
+export async function saveSystemAiConfig(config: {
+	groqApiKey: string;
+	model?: string;
+	updatedBy?: string;
+}): Promise<void> {
+	try {
+		await setDoc(
+			doc(db, "system_settings", "ai"),
+			{
+				...config,
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+	} catch (err: any) {
+		console.warn("[Firebase] Could not save AI config to cloud:", err?.message || err);
+	}
+}
+
+/**
+ * Load global AI system settings from Firestore
+ */
+export async function loadSystemAiConfig(): Promise<{
+	groqApiKey?: string;
+	model?: string;
+	updatedBy?: string;
+} | null> {
+	try {
+		const docRef = doc(db, "system_settings", "ai");
+		const snap = await getDoc(docRef);
+		if (snap.exists()) {
+			return snap.data() as {
+				groqApiKey?: string;
+				model?: string;
+				updatedBy?: string;
+			};
+		}
+	} catch (err: any) {
+		console.warn("[Firebase] Could not load AI config from cloud:", err?.message || err);
+	}
+	return null;
+}

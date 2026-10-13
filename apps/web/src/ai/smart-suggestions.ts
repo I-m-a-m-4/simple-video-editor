@@ -17,6 +17,8 @@ export interface SmartSuggestionItem {
 		| "voice_clarity"
 		| "cinematic_filter"
 		| "ending_animation"
+		| "crossfade_transitions"
+		| "add_title_hook"
 		| "pacing";
 	applied: boolean;
 }
@@ -28,11 +30,15 @@ export interface TimelineAnalysisContext {
 		name: string;
 		duration: number;
 		hasAudio: boolean;
+		hasColorEnhance?: boolean;
+		hasTransitions?: boolean;
 	}>;
 	audioTracksCount: number;
 	audioClipsCount: number;
 	overlayClipsCount: number;
 	textClipsCount: number;
+	hasColorGraded: boolean;
+	hasTransitions: boolean;
 }
 
 export function extractTimelineContext(
@@ -48,6 +54,8 @@ export function extractTimelineContext(
 			audioClipsCount: 0,
 			overlayClipsCount: 0,
 			textClipsCount: 0,
+			hasColorGraded: false,
+			hasTransitions: false,
 		};
 	}
 
@@ -73,11 +81,30 @@ export function extractTimelineContext(
 		mediaTimeToSeconds({ time: editor.timeline.getTotalDuration() }).toFixed(2),
 	);
 
-	const mainClips = mainElements.map((el) => ({
-		name: el.name || "Video Clip",
-		duration: Number(mediaTimeToSeconds({ time: el.duration }).toFixed(2)),
-		hasAudio: el.type === "video" ? (el.isSourceAudioEnabled ?? true) : false,
-	}));
+	let hasColorGraded = false;
+	let hasTransitions = false;
+
+	const mainClips = mainElements.map((el) => {
+		const params = el.params as Record<string, any> | undefined;
+		const colorGraded =
+			params?.colorEnhance === true ||
+			params?.filterPreset !== undefined ||
+			(typeof params?.vibrancy === "number" && params.vibrancy !== 1);
+		if (colorGraded) hasColorGraded = true;
+
+		const hasAnim =
+			el.animations?.opacity !== undefined ||
+			params?.endingFadeOut === true;
+		if (hasAnim) hasTransitions = true;
+
+		return {
+			name: el.name || "Video Clip",
+			duration: Number(mediaTimeToSeconds({ time: el.duration }).toFixed(2)),
+			hasAudio: el.type === "video" ? (el.isSourceAudioEnabled ?? true) : false,
+			hasColorEnhance: colorGraded,
+			hasTransitions: hasAnim,
+		};
+	});
 
 	return {
 		totalDuration,
@@ -87,6 +114,8 @@ export function extractTimelineContext(
 		audioClipsCount,
 		overlayClipsCount,
 		textClipsCount,
+		hasColorGraded,
+		hasTransitions,
 	};
 }
 
@@ -124,7 +153,7 @@ Schema for each object:
   "title": "Short title (under 6 words)",
   "description": "Clear explanation of why this improves the video (1-2 sentences)",
   "impact": "Concrete expected benefit (e.g. '0 dB Broadcast standard', '+28% viewer retention', 'Optimal mobile contrast')",
-  "actionType": "normalize_audio" | "enhance_color" | "voice_clarity" | "cinematic_filter" | "ending_animation"
+  "actionType": "normalize_audio" | "enhance_color" | "voice_clarity" | "cinematic_filter" | "ending_animation" | "crossfade_transitions" | "add_title_hook"
 }`,
 		},
 		{
@@ -134,6 +163,8 @@ Total Duration: ${context.totalDuration}s
 Video/Main Clips: ${context.mainClipsCount} (${context.mainClips.map((c) => `${c.name} (${c.duration}s)`).join(", ") || "None"})
 Audio Layers: ${context.audioClipsCount} across ${context.audioTracksCount} tracks
 Overlay & Text Elements: ${context.overlayClipsCount} (${context.textClipsCount} text)
+Color Graded: ${context.hasColorGraded ? "Yes" : "No"}
+Transitions: ${context.hasTransitions ? "Yes" : "No"}
 Analyze this timeline and suggest optimal audio, color, voice clarity, and pacing improvements.`,
 		},
 	];
@@ -203,6 +234,8 @@ function sanitizeActionType(
 		case "voice_clarity":
 		case "cinematic_filter":
 		case "ending_animation":
+		case "crossfade_transitions":
+		case "add_title_hook":
 		case "pacing":
 			return type;
 		default:
@@ -218,23 +251,64 @@ export function generateContextualSuggestions(
 ): SmartSuggestionItem[] {
 	const suggestions: SmartSuggestionItem[] = [];
 
-	// 1. Audio Dynamics
-	if (context.audioClipsCount > 0 || context.mainClipsCount > 0) {
+	// 1. Scene Cuts & Transitions (If 2+ clips detected without transitions)
+	if (context.mainClipsCount >= 2 && !context.hasTransitions) {
+		suggestions.push({
+			id: "sug-transitions-cuts",
+			category: "pacing",
+			title: "Seamless Cut Transitions",
+			description:
+				`Detected ${context.mainClipsCount} separate scenes. Blend the cut points with a smooth 0.8s crossfade to eliminate abrupt hard cuts.`,
+			impact: "+32% Visual Flow",
+			actionType: "crossfade_transitions",
+			applied: false,
+		});
+	}
+
+	// 2. Color & Vibrancy Grading
+	if (!context.hasColorGraded) {
+		const clipName = context.mainClips[0]?.name || "video";
+		suggestions.push({
+			id: "sug-color-vibrancy",
+			category: "color",
+			title: "Vibrancy & Midtone Contrast",
+			description:
+				`Enhance color saturation (+25%) and midtone contrast on "${clipName}" so visuals pop with rich OLED depth.`,
+			impact: "Vibrant Mobile Optimized",
+			actionType: "enhance_color",
+			applied: false,
+		});
+	} else {
+		suggestions.push({
+			id: "sug-color-cinema",
+			category: "color",
+			title: "Warm Cinematic Film Grade",
+			description:
+				"Apply subtle warm analog tones and balanced highlight roll-off for a cohesive movie-like aesthetic.",
+			impact: "Cinematic Film Look",
+			actionType: "cinematic_filter",
+			applied: false,
+		});
+	}
+
+	// 3. Audio & Vocal Clarity
+	const hasAudioSource = context.audioClipsCount > 0 || context.mainClips.some((c) => c.hasAudio);
+	if (hasAudioSource) {
 		suggestions.push({
 			id: "sug-audio-norm",
 			category: "audio",
-			title: "Audio Loudness Alignment",
+			title: "Dialogue Clarity & Loudness EQ",
 			description:
-				"Clip volume levels vary across cuts. Normalize peak loudness to 0 dB to ensure comfortable listening on mobile and headphones.",
-			impact: "0 dB EBU R128 Broadcast standard",
-			actionType: "normalize_audio",
+				"Align peak audio levels to 0 dB broadcast standard and apply high-pass dialogue presence boost.",
+			impact: "0 dB EBU R128 Clean Speech",
+			actionType: "voice_clarity",
 			applied: false,
 		});
 	} else {
 		suggestions.push({
 			id: "sug-audio-add",
 			category: "audio",
-			title: "Add Background Music & Sound",
+			title: "Add Background Soundtrack",
 			description:
 				"No audio track detected. Adding subtle atmospheric music significantly increases viewer completion rates.",
 			impact: "+40% Average Watch Time",
@@ -243,51 +317,28 @@ export function generateContextualSuggestions(
 		});
 	}
 
-	// 2. Color & Vibrancy
-	if (context.mainClipsCount > 1) {
+	// 4. Hook Title / Captions
+	if (context.textClipsCount === 0) {
 		suggestions.push({
-			id: "sug-color-match",
-			category: "color",
-			title: "Color & Exposure Auto-Match",
+			id: "sug-title-hook",
+			category: "filter",
+			title: "Add Attention-Grabbing Hook Title",
 			description:
-				`Detected ${context.mainClipsCount} cuts. Balance skin tones and align exposure across all clips for cinematic consistency.`,
-			impact: "+25% Visual Cohesion",
-			actionType: "cinematic_filter",
-			applied: false,
-		});
-	} else {
-		suggestions.push({
-			id: "sug-color-vibrancy",
-			category: "color",
-			title: "Vibrancy & Midtone Contrast",
-			description:
-				"Enhance color saturation (+20%) and contrast so video pops on OLED screens and mobile feeds.",
-			impact: "Vibrant Mobile Optimized",
-			actionType: "enhance_color",
+				"Videos with a bold title in the first 3 seconds see a 2.4x higher initial viewer retention rate.",
+			impact: "+45% 3-Second Retention",
+			actionType: "add_title_hook",
 			applied: false,
 		});
 	}
 
-	// 3. Voice Clarity
-	suggestions.push({
-		id: "sug-voice-clarity",
-		category: "voice",
-		title: "Studio Dialogue & Noise Filter",
-		description:
-			"Apply high-pass rumble suppression and vocal presence boost to bring spoken dialogue forward in the mix.",
-		impact: "Clean Dialogue Separation",
-		actionType: "voice_clarity",
-		applied: false,
-	});
-
-	// 4. Ending Animation or Pacing
-	if (context.totalDuration > 5) {
+	// 5. Ending Animation Outro
+	if (context.totalDuration > 4) {
 		suggestions.push({
 			id: "sug-outro-animation",
 			category: "pacing",
-			title: "Outro Ending Fade",
+			title: "Smooth Outro Ending Dissolve",
 			description:
-				"Smoothly dissolve clip video and audio at the end of the timeline to avoid abrupt black cuts.",
+				`Smoothly dissolve video and audio at the end of the timeline (${context.totalDuration}s) to avoid an abrupt black cut.`,
 			impact: "Seamless Professional Ending",
 			actionType: "ending_animation",
 			applied: false,
@@ -382,8 +433,10 @@ export function applySuggestionAction(
 				(el) => el.type === "video" || el.type === "image",
 				() => ({
 					colorEnhance: true,
-					vibrancy: 1.25,
-					saturation: 1.2,
+					vibrancy: 1.3,
+					saturation: 1.25,
+					contrast: 1.15,
+					brightness: 1.02,
 				}),
 			);
 			recordTelemetryEvent("color_better", "Color Enhancement", `Applied color vibrancy on ${count} clips`);
@@ -405,24 +458,85 @@ export function applySuggestionAction(
 			count = executeTimelineUpdate(
 				(el) => el.type === "video" || el.type === "image",
 				() => ({
+					filterPreset: "cinema-warm",
 					colorConsistent: true,
-					exposureMatch: 1.0,
-					contrast: 1.15,
+					contrast: 1.12,
+					saturation: 1.2,
 				}),
 			);
-			recordTelemetryEvent("color_consistent", "Cinematic Exposure Match", `Aligned ${count} video clips`);
+			recordTelemetryEvent("color_consistent", "Cinematic Film Filter", `Applied cinema grade on ${count} clips`);
 			break;
 
-		case "ending_animation":
-			count = executeTimelineUpdate(
-				(el, trackType) => trackType === "main" && el.type === "video",
-				(el) => ({
-					endingFadeOut: true,
-					fadeOutDuration: 1.2,
-					opacity: (el.params as any)?.opacity ?? 1,
-				}),
-			);
+		case "crossfade_transitions": {
+			const mainElements = scene.tracks.main?.elements ?? [];
+			const trackId = scene.tracks.main?.id ?? "main";
+			if (mainElements.length >= 2) {
+				const { applyTransitionBetweenClips } = require("@/transitions/apply-transition");
+				for (let i = 0; i < mainElements.length - 1; i++) {
+					const outgoing = mainElements[i];
+					const incoming = mainElements[i + 1];
+					if (outgoing && incoming) {
+						applyTransitionBetweenClips({
+							outgoingClip: outgoing,
+							incomingClip: incoming,
+							trackId,
+							transitionType: "cross_dissolve",
+							duration: 0.8,
+							editor,
+						});
+						count++;
+					}
+				}
+			}
 			break;
+		}
+
+		case "add_title_hook": {
+			const { buildTextElement } = require("@/timeline/element-utils");
+			const { DEFAULTS } = require("@/timeline/defaults");
+			const { loadFullFont } = require("@/fonts/google-fonts");
+			loadFullFont({ family: "Montserrat", weights: [700, 900] }).catch(() => {});
+
+			const titleElement = buildTextElement({
+				raw: {
+					name: "Hook Headline",
+					params: {
+						...DEFAULTS.text.element.params,
+						content: "AMAZING CITY TOUR",
+						fontFamily: "Montserrat",
+						fontSize: 64,
+						fontWeight: "900",
+						color: "#FFFFFF",
+					},
+				},
+				startTime: 0 as any,
+			});
+
+			editor.timeline.insertElement({
+				element: titleElement,
+				placement: { mode: "auto" },
+			});
+			count = 1;
+			break;
+		}
+
+		case "ending_animation": {
+			const mainElements = scene.tracks.main?.elements ?? [];
+			const lastClip = mainElements[mainElements.length - 1];
+			const trackId = scene.tracks.main?.id ?? "main";
+			if (lastClip) {
+				const { applyClipAnimation } = require("@/transitions/apply-transition");
+				applyClipAnimation({
+					element: lastClip,
+					trackId,
+					animationType: "fade_out",
+					duration: 1.2,
+					editor,
+				});
+				count = 1;
+			}
+			break;
+		}
 
 		case "pacing":
 			count = 1;

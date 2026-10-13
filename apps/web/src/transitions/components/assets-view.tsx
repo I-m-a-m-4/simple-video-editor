@@ -30,7 +30,7 @@ import {
 	Sparkles,
 	Check,
 } from "lucide-react";
-import { mediaTimeToSeconds, addMediaTime } from "@/wasm";
+import { mediaTimeToSeconds, mediaTimeFromSeconds, addMediaTime } from "@/wasm";
 
 const ICON_MAP: Record<string, any> = {
 	Blend,
@@ -67,6 +67,36 @@ export function TransitionsView() {
 
 	const handleApplyTransition = (transition: TransitionDefinition, applyToAll = false) => {
 		if (mainElements.length < 2) {
+			if (mainElements.length === 1) {
+				const currentElement = mainElements[0];
+				const currentSec = Number(mediaTimeToSeconds({ time: currentTime }).toFixed(3));
+				const clipDur = Number(mediaTimeToSeconds({ time: currentElement.duration }).toFixed(3));
+				const splitSec = currentSec > 0.5 && currentSec < clipDur - 0.5 ? currentSec : clipDur / 2;
+				const splitTime = mediaTimeFromSeconds({ seconds: splitSec });
+
+				editor.timeline.splitElements({
+					elements: [{ trackId, elementId: currentElement.id }],
+					splitTime,
+				});
+
+				setTimeout(() => {
+					const updatedScene = editor.scenes.getActiveSceneOrNull();
+					const updatedMain = updatedScene?.tracks.main?.elements ?? [];
+					if (updatedMain.length >= 2) {
+						applyTransitionBetweenClips({
+							outgoingClip: updatedMain[0],
+							incomingClip: updatedMain[1],
+							trackId,
+							transitionType: transition.id,
+							duration,
+							editor,
+						});
+						setAppliedTransitionId(transition.id);
+						toast.success(`Split clip and applied "${transition.name}" transition!`);
+					}
+				}, 60);
+				return;
+			}
 			toast.info("Need at least 2 video clips on the main timeline to apply transitions.", {
 				description: "Split your video clip or add another clip to create cuts.",
 			});
