@@ -7,8 +7,6 @@ import {
 	ChevronDown,
 	ChevronRight,
 	ExternalLink,
-	Eye,
-	EyeOff,
 	Play,
 	RotateCcw,
 	Send,
@@ -17,10 +15,10 @@ import {
 	Trash2,
 	Wrench,
 	Rocket,
+	Settings,
 } from "lucide-react";
 import { LaunchVideoStudio } from "./launch-video-studio";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -39,11 +37,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MODEL_LABELS: Record<string, string> = {
-	"llama-3.3-70b-versatile": "Amber 70B Fast (Recommended)",
-	"llama-3.1-8b-instant": "Amber 8B Instant (Ultra Fast)",
-	"llama3-70b-8192": "Amber 70B High Precision",
-	"llama3-8b-8192": "Amber 8B Fast",
-	"mixtral-8x7b-32768": "Amber MoE Context",
+	"openai/gpt-oss-120b": "Amber 120B High-Intelligence (Default)",
+	"qwen/qwen3.8-27b": "Amber 27B Fast",
+	"openai/gpt-oss-20b": "Amber 20B Instant",
+	"llama-3.3-70b-versatile": "Amber 70B Versatile",
+	"llama-3.1-8b-instant": "Amber 8B Instant",
 };
 
 const QUICK_ACTIONS = [
@@ -63,23 +61,16 @@ export function AiAssistantView() {
 		messages,
 		isGenerating,
 		activeToolName,
-		setApiKey,
 		setModel,
 		clearMessages,
 	} = useAiStore();
 
 	const [input, setInput] = useState("");
-	const [showSettings, setShowSettings] = useState(!apiKey);
-	const [apiKeyDraft, setApiKeyDraft] = useState(apiKey);
-	const [showKeyText, setShowKeyText] = useState(false);
+	const [showSettings, setShowSettings] = useState(false);
 	const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-	useEffect(() => {
-		setApiKeyDraft(apiKey);
-	}, [apiKey]);
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -106,18 +97,24 @@ export function AiAssistantView() {
 		}));
 	};
 
-	const handleSaveKey = () => {
-		setApiKey(apiKeyDraft);
-		if (apiKeyDraft) {
-			setShowSettings(false);
-		}
-	};
-
 	return (
 		<PanelView
 			title="Amber AI Assistant"
 			actions={
 				<div className="flex items-center gap-1">
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className={`h-7 w-7 ${showSettings ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+								onClick={() => setShowSettings(!showSettings)}
+							>
+								<Settings className="size-3.5" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="bottom">Copilot Settings</TooltipContent>
+					</Tooltip>
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<Button
@@ -142,38 +139,15 @@ export function AiAssistantView() {
 					<div className="bg-muted/40 border-b p-3 space-y-3 shrink-0 animate-in fade-in slide-in-from-top-2 duration-200">
 						<div className="flex items-center justify-between">
 							<span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-								<Sparkles className="size-3 text-primary" /> Amber AI Configuration
+								<Sparkles className="size-3 text-primary" /> Amber AI Engine
 							</span>
-							<span className="text-[11px] text-muted-foreground">Neural Copilot</span>
+							<Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 py-0">
+								Cloud Intelligence Ready
+							</Badge>
 						</div>
 
 						<div className="space-y-1.5">
-							<label className="text-[11px] text-muted-foreground block">Amber AI Key</label>
-							<div className="flex gap-1.5">
-								<div className="relative flex-1">
-									<Input
-										type={showKeyText ? "text" : "password"}
-										placeholder="sk-amber-ai..."
-										value={apiKeyDraft}
-										onChange={(e) => setApiKeyDraft(e.target.value)}
-										className="h-8 text-xs font-mono pr-8"
-									/>
-									<button
-										type="button"
-										onClick={() => setShowKeyText(!showKeyText)}
-										className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-									>
-										{showKeyText ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-									</button>
-								</div>
-								<Button size="sm" className="h-8 text-xs px-3" onClick={handleSaveKey}>
-									Save
-								</Button>
-							</div>
-						</div>
-
-						<div className="space-y-1.5">
-							<label className="text-[11px] text-muted-foreground block">Model Engine</label>
+							<label className="text-[11px] text-muted-foreground block">Active Model</label>
 							<Select value={model} onValueChange={setModel}>
 								<SelectTrigger className="h-8 text-xs">
 									<SelectValue placeholder="Select model" />

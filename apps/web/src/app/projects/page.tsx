@@ -601,7 +601,7 @@ export default function ProjectsPage() {
 								More tools
 							</h3>
 
-							<div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+							<div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
 								{[
 									{
 										id: "shorts",
@@ -610,22 +610,6 @@ export default function ProjectsPage() {
 										badge: "AI",
 										color: "bg-orange-500/10 text-orange-500",
 										action: () => setIsShortsModalOpen(true),
-									},
-									{
-										id: "aivideo",
-										title: "AI video",
-										icon: Video,
-										badge: "AI",
-										color: "bg-amber-500/10 text-amber-500",
-										action: () => openCreateProject("ai-video", "AI Cinematic Reel"),
-									},
-									{
-										id: "aiimage",
-										title: "AI image",
-										icon: ImageIcon,
-										badge: "AI",
-										color: "bg-rose-500/10 text-rose-500",
-										action: () => openCreateProject("ai-image", "AI Image Showcase"),
 									},
 									{
 										id: "translator",
@@ -637,30 +621,6 @@ export default function ProjectsPage() {
 											toast.info(
 												"Open video in editor to run AI subtitles & translation.",
 											),
-									},
-									{
-										id: "dialogue",
-										title: "AI dialogue",
-										icon: MessageSquare,
-										badge: "AI",
-										color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-										action: () => setIsTtsOpen(true),
-									},
-									{
-										id: "fashion",
-										title: "AI model",
-										icon: Shirt,
-										badge: "AI",
-										color: "bg-purple-500/10 text-purple-500",
-										action: () => openCreateProject("ai-model", "AI Fashion Showcase"),
-									},
-									{
-										id: "tts",
-										title: "Text to speech",
-										icon: Volume2,
-										badge: "AI",
-										color: "bg-orange-500/10 text-orange-500",
-										action: () => setIsTtsOpen(true),
 									},
 									{
 										id: "player",

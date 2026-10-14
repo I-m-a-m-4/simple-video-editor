@@ -24,7 +24,7 @@ export function ProButton() {
 				}`}
 			>
 				<Crown className={`size-3.5 ${isProEffective ? "text-orange-400 fill-orange-400" : "text-white fill-white"}`} />
-				<span className="font-bold tracking-tight font-clash text-xs">
+				<span className="font-bold tracking-tight font-dm text-xs">
 					{isProEffective ? "PRO" : "Pro"}
 				</span>
 			</Button>

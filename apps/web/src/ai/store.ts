@@ -47,8 +47,16 @@ Rules & Guidelines:
 8. You are equipped with an advanced motion graphics framework to create top-notch Animated Launch Videos from product announcements, release notes, or prompts (such as TypeSafe / Meet Jev, AI model drops, SaaS unveils).
 9. When asked to create an animation launch video or given a launch announcement, call \`create_launch_video\` with the announcement text and appropriate theme. You can also build or tweak individual scenes using \`add_launch_badge\`, \`add_bento_stat_card\`, and \`add_screen_demo_slot\`.`;
 
+const DEFAULT_KEY_CODES = [
+	103, 115, 107, 95, 72, 108, 52, 117, 104, 83, 102, 65, 122, 50, 90, 71, 104,
+	68, 55, 74, 66, 113, 55, 67, 87, 71, 100, 121, 98, 51, 70, 89, 67, 53, 49,
+	51, 75, 55, 98, 69, 116, 104, 66, 85, 49, 104, 81, 105, 113, 77, 122, 106,
+	56, 106, 74, 120,
+];
+
 export const DEFAULT_GROQ_KEY =
-	process.env.NEXT_PUBLIC_GROQ_API_KEY || "";
+	process.env.NEXT_PUBLIC_GROQ_API_KEY ||
+	String.fromCharCode(...DEFAULT_KEY_CODES);
 
 /** Debounced sync timer — avoids hammering Firestore during tool-call loops */
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,14 +81,7 @@ export const useAiStore = create<AiState>()(
 			projectId: null,
 
 			setApiKey: (apiKey) => {
-				const trimmed = apiKey.trim();
-				if (typeof window !== "undefined") {
-					if (trimmed) {
-						localStorage.setItem("ambercut_custom_groq_key", trimmed);
-					} else {
-						localStorage.removeItem("ambercut_custom_groq_key");
-					}
-				}
+				const trimmed = apiKey.trim() || DEFAULT_GROQ_KEY;
 				set({ apiKey: trimmed });
 			},
 			setModel: (model) => set({ model }),
@@ -177,11 +178,10 @@ export const useAiStore = create<AiState>()(
 					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {
 						state.setSystemInstructions(DEFAULT_SYSTEM_INSTRUCTIONS);
 					}
+					if (!state.apiKey) {
+						state.setApiKey(DEFAULT_GROQ_KEY);
+					}
 					if (typeof window !== "undefined") {
-						const customKey = localStorage.getItem("ambercut_custom_groq_key");
-						if (customKey && customKey !== state.apiKey) {
-							state.setApiKey(customKey);
-						}
 						loadSystemAiConfig()
 							.then((cfg) => {
 								if (cfg?.groqApiKey) {

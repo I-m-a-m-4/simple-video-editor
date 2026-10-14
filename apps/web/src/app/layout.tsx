@@ -7,12 +7,19 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { baseMetaData } from "./metadata";
 import { BotIdClient } from "botid/client";
 import { webEnv } from "@/env/web";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans, DM_Sans } from "next/font/google";
 import { AuthProvider } from "@/auth/auth-context";
 
 const siteFont = Plus_Jakarta_Sans({
 	subsets: ["latin"],
 	variable: "--font-plus-jakarta",
+	weight: ["300", "400", "500", "600", "700", "800"],
+	display: "swap",
+});
+
+const dmSansFont = DM_Sans({
+	subsets: ["latin"],
+	variable: "--font-dm-sans",
 	weight: ["300", "400", "500", "600", "700", "800"],
 	display: "swap",
 });
@@ -40,7 +47,7 @@ export default function RootLayout({
 				/>
 				<BotIdClient protect={protectedRoutes} />
 			</head>
-			<body className={`${siteFont.variable} ${siteFont.className} font-sans antialiased`}>
+			<body className={`${siteFont.variable} ${dmSansFont.variable} ${siteFont.className} font-sans antialiased`}>
 				<ThemeProvider
 					attribute="class"
 					defaultTheme="system"

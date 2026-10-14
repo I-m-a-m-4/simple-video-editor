@@ -31,6 +31,18 @@ import { Minimize2, Maximize2, X, Minus } from "lucide-react";
 import Image from "next/image";
 import { Progress } from "@/components/ui/progress";
 
+import { isDesktopApp } from "@/utils/desktop";
+
+function getApiUrl(path: string): string {
+	if (typeof window !== "undefined") {
+		const origin = window.location.origin;
+		if (origin.startsWith("tauri:") || origin.includes("tauri.localhost")) {
+			return `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}${path}`;
+		}
+	}
+	return path;
+}
+
 interface UrlImportModalProps {
 	isOpen: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -72,7 +84,32 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 		setIsLoadingInfo(true);
 		setVideoInfo(null);
 		try {
-			const res = await fetch(`/api/media/info?url=${encodeURIComponent(url.trim())}`);
+			// 1. Try native desktop command first if in Tauri
+			if (isDesktopApp()) {
+				try {
+					const tauri = (window as any).__TAURI__;
+					const invoke =
+						tauri?.core?.invoke || (window as any).__TAURI_INTERNALS__?.invoke;
+					if (invoke) {
+						const data = await invoke("get_video_info", { url: url.trim() });
+						if (data && (data.success || data.title)) {
+							setVideoInfo({
+								title: data.title || "Web Video",
+								duration: data.duration,
+								thumbnail: data.thumbnail,
+								uploader: data.uploader,
+							});
+							toast.success("Found video: " + (data.title || "Web Video"));
+							return;
+						}
+					}
+				} catch (tauriErr) {
+					console.warn("Desktop native fetch info failed, falling back to HTTP:", tauriErr);
+				}
+			}
+
+			// 2. HTTP fetch fallback (using full localhost/origin URL if on Tauri)
+			const res = await fetch(getApiUrl(`/api/media/info?url=${encodeURIComponent(url.trim())}`));
 			const data = await res.json();
 			if (!res.ok || !data.success) {
 				throw new Error(data.error || "Could not fetch video information.");
@@ -94,7 +131,7 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 
 	const fetchProgress = useCallback(async (id: string) => {
 		try {
-			const res = await fetch(`/api/media/grab/progress?id=${id}`);
+			const res = await fetch(getApiUrl(`/api/media/grab/progress?id=${id}`));
 			if (!res.ok) return;
 			const data = await res.json();
 			if (data?.progress) {
@@ -157,6 +194,79 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 				: "Connecting to media stream...",
 		);
 
+		// 1. Try native desktop download if running in Tauri
+		if (isDesktopApp()) {
+			try {
+				const tauri = (window as any).__TAURI__;
+				const invoke =
+					tauri?.core?.invoke || (window as any).__TAURI_INTERNALS__?.invoke;
+				if (invoke) {
+					setProgressStep("Downloading video via native high-speed stream...");
+					const dlResult = await invoke("download_video_stream", {
+						url: url.trim(),
+						convertToShort,
+						startTime: convertToShort ? startTime : undefined,
+						duration: convertToShort ? durationSec : undefined,
+					});
+
+					if (dlResult?.filePath) {
+						setProgressStep("Reading media bytes into AmberCut...");
+						const fileBytes = await invoke("read_binary_file", { path: dlResult.filePath });
+						const cleanName = dlResult.fileName || (videoInfo?.title ? `${videoInfo.title.replace(/[^\w\s-]/g, "").trim()}.mp4` : "video.mp4");
+						const uint8 = new Uint8Array(fileBytes);
+						const file = new File([uint8], cleanName, { type: "video/mp4" });
+
+						setDownloadPercent(100);
+						setProgressStep("Processing media assets...");
+
+						const processed = await processMediaAssets({ files: [file] });
+						if (processed.length === 0) {
+							throw new Error("Could not process video in browser.");
+						}
+
+						const asset = processed[0];
+						const projectId = editor.project.getActive().metadata.id;
+						const savedAsset = await editor.media.addMediaAsset({ projectId, asset });
+						if (!savedAsset) {
+							throw new Error("Failed to save media asset to project.");
+						}
+
+						if (addToTimeline) {
+							const mediaDuration =
+								savedAsset.duration != null
+									? mediaTimeFromSeconds({ seconds: savedAsset.duration })
+									: mediaTimeFromSeconds({ seconds: 5 });
+
+							const element = buildElementFromMedia({
+								mediaId: savedAsset.id,
+								mediaType: "video",
+								name: savedAsset.name,
+								duration: mediaDuration,
+								startTime: editor.playback.getCurrentTime(),
+							});
+
+							editor.timeline.insertElement({
+								element,
+								placement: { mode: "auto" },
+							});
+						}
+
+						toast.success(
+							convertToShort
+								? "Vertical Short added to your project!"
+								: "Video added to your project!",
+						);
+						setIsDownloading(false);
+						onOpenChange(false);
+						return;
+					}
+				}
+			} catch (tauriErr) {
+				console.warn("Desktop native download failed, trying HTTP fallback:", tauriErr);
+			}
+		}
+
+		// 2. HTTP download fallback (using getApiUrl for Tauri localhost:3000 compatibility)
 		const downloadId = `grab_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 		currentDownloadIdRef.current = downloadId;
 		const controller = new AbortController();
@@ -169,7 +279,7 @@ export function UrlImportModal({ isOpen, onOpenChange }: UrlImportModalProps) {
 				fetchProgress(downloadId);
 			}, 400);
 
-			const response = await fetch("/api/media/grab", {
+			const response = await fetch(getApiUrl("/api/media/grab"), {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				signal: controller.signal,

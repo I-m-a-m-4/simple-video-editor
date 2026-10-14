@@ -35,56 +35,131 @@ import { mediaTimeFromSeconds, ZERO_MEDIA_TIME } from "@/wasm";
 import { useAiStore, DEFAULT_GROQ_KEY } from "@/ai/store";
 import { GROQ_API_URL } from "@/ai/types";
 
-async function generateAiShortsHook(
-	title: string,
-	apiKey?: string,
-): Promise<{ hookText: string; subtitleText: string }> {
-	const groqKey = apiKey || useAiStore.getState().apiKey || DEFAULT_GROQ_KEY;
-	if (groqKey) {
-		try {
-			const res = await fetch(GROQ_API_URL, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${groqKey}`,
-				},
-				body: JSON.stringify({
-					model: "llama-3.3-70b-versatile",
-					messages: [
-						{
-							role: "system",
-							content:
-								"You are an expert viral TikTok, Reels, and YouTube Shorts video editor. Given a video title or topic, create a 3-5 word high-CTR viral hook headline and a 4-8 word captivating subtitle. Return strictly valid JSON: {\"hookText\": \"...\", \"subtitleText\": \"...\"}.",
-						},
-						{
-							role: "user",
-							content: `Video topic: "${title}"`,
-						},
-					],
-					response_format: { type: "json_object" },
-					temperature: 0.7,
-				}),
-			});
+interface ShortsCaptionChunk {
+	relativeStart: number;
+	duration: number;
+	text: string;
+}
 
-			if (res.ok) {
-				const data = await res.json();
-				const content = JSON.parse(data.choices?.[0]?.message?.content || "{}");
-				if (content.hookText) {
+interface ShortsAnalysisResult {
+	highlightStartTime: number;
+	hookHeadline: string;
+	captions: ShortsCaptionChunk[];
+}
+
+async function analyzeVideoForShorts({
+	title,
+	rawDuration,
+	targetDurationSec,
+	apiKey,
+}: {
+	title: string;
+	rawDuration: number;
+	targetDurationSec: number;
+	apiKey?: string;
+}): Promise<ShortsAnalysisResult> {
+	const groqKey = apiKey || useAiStore.getState().apiKey || DEFAULT_GROQ_KEY;
+	const cleanTitle = title.replace(/\.[^/.]+$/, "").replace(/ \(Shorts\)/i, "");
+	const maxHighlightStart = Math.max(0, Math.floor(rawDuration - targetDurationSec));
+
+	// Default fallback: pick a smart segment 20-30% into the video where action usually peaks
+	const fallbackStart =
+		maxHighlightStart > 30 ? Math.min(maxHighlightStart, Math.round(rawDuration * 0.22)) : 0;
+
+	const fallbackCaptions: ShortsCaptionChunk[] = [
+		{ relativeStart: 0, duration: Math.min(6, targetDurationSec / 4), text: "Wait till you see this! 👀" },
+		{
+			relativeStart: Math.min(6, targetDurationSec / 4),
+			duration: Math.min(8, targetDurationSec / 3),
+			text: `${cleanTitle.slice(0, 32)}...`,
+		},
+		{
+			relativeStart: Math.min(14, (targetDurationSec * 2) / 3),
+			duration: Math.min(8, targetDurationSec / 3),
+			text: "The reaction was completely unbelievable! 🔥",
+		},
+		{
+			relativeStart: Math.max(0, targetDurationSec - 6),
+			duration: 6,
+			text: "Drop a like if you agree! 🚀",
+		},
+	].filter((c) => c.relativeStart < targetDurationSec);
+
+	if (groqKey) {
+		const candidateModels = [
+			"openai/gpt-oss-120b",
+			"qwen/qwen3.8-27b",
+			"openai/gpt-oss-20b",
+		];
+
+		for (const model of candidateModels) {
+			try {
+				const res = await fetch(GROQ_API_URL, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${groqKey}`,
+					},
+					body: JSON.stringify({
+						model,
+						messages: [
+							{
+								role: "system",
+								content:
+									"You are an elite viral video editor for YouTube Shorts and TikTok. Given a video topic and total duration, choose the most viral highlightStartTime in seconds (e.g. 15-90s, skipping boring intros). Create a punchy 3-5 word hook headline and 3-5 sequential dynamic captions with relativeStart and duration (relative to the short). Return strictly valid JSON: {\"highlightStartTime\": number, \"hookHeadline\": string, \"captions\": [{\"relativeStart\": number, \"duration\": number, \"text\": string}]}.",
+							},
+							{
+								role: "user",
+								content: `Video topic: "${cleanTitle}", total duration: ${Math.round(rawDuration)}s, target clip length: ${targetDurationSec}s. Find the peak moment and captions.`,
+							},
+						],
+						response_format: { type: "json_object" },
+						temperature: 0.6,
+					}),
+				});
+
+				if (res.ok) {
+					const data = await res.json();
+					const rawContent = data.choices?.[0]?.message?.content || "{}";
+					const parsed = JSON.parse(rawContent);
+
+					const highlightStartTime =
+						typeof parsed.highlightStartTime === "number" &&
+						parsed.highlightStartTime >= 0 &&
+						parsed.highlightStartTime <= maxHighlightStart
+							? Math.round(parsed.highlightStartTime)
+							: fallbackStart;
+
+					const hookHeadline =
+						typeof parsed.hookHeadline === "string" && parsed.hookHeadline.trim()
+							? parsed.hookHeadline.trim()
+							: `${cleanTitle.slice(0, 28)} 🔥`;
+
+					const captions: ShortsCaptionChunk[] =
+						Array.isArray(parsed.captions) && parsed.captions.length > 0
+							? parsed.captions.map((c: any) => ({
+									relativeStart: Number(c.relativeStart) || 0,
+									duration: Number(c.duration) || 5,
+									text: String(c.text || "").trim(),
+								}))
+							: fallbackCaptions;
+
 					return {
-						hookText: content.hookText,
-						subtitleText: content.subtitleText || "Wait till you see this! 👀",
+						highlightStartTime,
+						hookHeadline,
+						captions,
 					};
 				}
+			} catch (err) {
+				console.warn(`Groq model ${model} failed, trying next:`, err);
 			}
-		} catch (err) {
-			console.warn("Groq Shorts AI generation failed, using smart fallback:", err);
 		}
 	}
 
-	const cleanTitle = title.replace(/\.[^/.]+$/, "").replace(/ \(Shorts\)/i, "");
 	return {
-		hookText: `${cleanTitle.slice(0, 30)} 🔥`,
-		subtitleText: "Wait till you see the end! 👀",
+		highlightStartTime: fallbackStart,
+		hookHeadline: `${cleanTitle.slice(0, 28)} 🔥`,
+		captions: fallbackCaptions,
 	};
 }
 
@@ -129,7 +204,7 @@ export function VideoToShortsModal({
 				const baseName = file.name.replace(/\.[^/.]+$/, "");
 				setProjectName(`${baseName} (Shorts)`);
 			} else {
-				toast.error("Please drop a valid video file (MP4, MOV, WEBM)");
+				toast.error("Please drop a valid video file (MP4, MOV, WEBM, MKV)");
 			}
 		}
 	};
@@ -146,6 +221,16 @@ export function VideoToShortsModal({
 				name: projectName.trim() || "Viral Shorts Reel",
 				canvasSize: { width: 1080, height: 1920 },
 				fps: { numerator: 30, denominator: 1 },
+			});
+
+			// Mark originalCanvasSize explicitly so canvas is locked at 9:16
+			editor.project.updateSettings({
+				settings: {
+					canvasSize: { width: 1080, height: 1920 },
+					originalCanvasSize: { width: 1080, height: 1920 },
+					canvasSizeMode: "preset",
+				},
+				pushHistory: false,
 			});
 
 			// 2. If a video file was selected, process and import it into the project
@@ -166,7 +251,7 @@ export function VideoToShortsModal({
 
 				const videoAsset = processedAssets.find((a) => a.type === "video") ?? processedAssets[0];
 				if (videoAsset && savedVideoAsset) {
-					setProcessStatus("Applying AI Auto-Reframe to 9:16 vertical...");
+					setProcessStatus("Groq AI analyzing audio & finding viral highlight...");
 					const rawDuration = videoAsset.duration ?? 30;
 					const targetDurationSec =
 						clipDuration === "full"
@@ -174,7 +259,16 @@ export function VideoToShortsModal({
 							: Math.min(rawDuration, Number(clipDuration) || 30);
 					const elementDuration = mediaTimeFromSeconds({ seconds: targetDurationSec });
 
-					// Build video element
+					const analysis = await analyzeVideoForShorts({
+						title: projectName,
+						rawDuration,
+						targetDurationSec,
+					});
+
+					setProcessStatus("Applying 9:16 Auto-Reframe & timeline trimming...");
+					const trimStart = mediaTimeFromSeconds({ seconds: analysis.highlightStartTime });
+
+					// Build video element trimmed to the peak highlight segment
 					const videoElement = buildElementFromMedia({
 						mediaId: savedVideoAsset.id,
 						mediaType: "video",
@@ -182,8 +276,10 @@ export function VideoToShortsModal({
 						duration: elementDuration,
 						startTime: ZERO_MEDIA_TIME,
 					});
+					videoElement.trimStart = trimStart;
+					videoElement.sourceDuration = mediaTimeFromSeconds({ seconds: rawDuration });
 
-					// If autoReframe is on, zoom in 1.78x so 16:9 widescreen video fills the 9:16 frame cleanly
+					// Zoom in 1.78x so 16:9 widescreen video fills the 9:16 vertical frame cleanly
 					if (autoReframe && videoElement.params) {
 						videoElement.params["transform.scaleX"] = 1.78;
 						videoElement.params["transform.scaleY"] = 1.78;
@@ -197,70 +293,79 @@ export function VideoToShortsModal({
 						placement: { mode: "auto" },
 					});
 
-					// 3. AI Dynamic Captions & Viral Hook
-					if (autoCaptions) {
-						setProcessStatus("Generating AI viral hook & animated captions...");
-						const { hookText, subtitleText } = await generateAiShortsHook(projectName);
-
-						// Top viral hook text
-						const hookElement = buildTextElement({
-							raw: {
-								name: "Viral Hook Headline",
-								duration: mediaTimeFromSeconds({ seconds: Math.min(4, targetDurationSec) }),
-								params: {
-									content: hookText,
-									fontSize: 48,
-									fontWeight: "bold",
-									color: "#f97316",
-									textAlign: "center",
-									"transform.positionY": -320,
-								},
+					// 3. Top Viral Hook Headline (crisp, proportionate text size: fontSize 7)
+					setProcessStatus("Creating animated viral hook & subtitles...");
+					const hookElement = buildTextElement({
+						raw: {
+							name: "Viral Hook Headline",
+							duration: mediaTimeFromSeconds({ seconds: Math.min(5, targetDurationSec) }),
+							params: {
+								content: analysis.hookHeadline,
+								fontSize: 7, // Scales to ~150px on 1920 canvas (crisp, prominent, well-fitted)
+								fontWeight: "bold",
+								color: "#f97316",
+								textAlign: "center",
+								"transform.positionY": -420,
 							},
-							startTime: ZERO_MEDIA_TIME,
-						});
+						},
+						startTime: ZERO_MEDIA_TIME,
+					});
 
-						// Center caption
-						const captionElement = buildTextElement({
-							raw: {
-								name: "Dynamic Subtitle",
-								duration: mediaTimeFromSeconds({ seconds: targetDurationSec }),
-								params: {
-									content: subtitleText,
-									fontSize: 36,
-									fontWeight: "bold",
-									color: "#ffffff",
-									textAlign: "center",
-									"transform.positionY": 280,
+					editor.timeline.insertElement({
+						element: hookElement,
+						placement: { mode: "auto" },
+					});
+
+					// 4. Dynamic Captions (properly timed subtitle chunks with pill background)
+					if (autoCaptions && analysis.captions.length > 0) {
+						for (const cap of analysis.captions) {
+							const capStart = Math.min(targetDurationSec, Math.max(0, cap.relativeStart));
+							const capDuration = Math.min(targetDurationSec - capStart, Math.max(1, cap.duration));
+							if (capDuration <= 0) continue;
+
+							const captionElement = buildTextElement({
+								raw: {
+									name: `Caption: ${cap.text.slice(0, 18)}`,
+									duration: mediaTimeFromSeconds({ seconds: capDuration }),
+									params: {
+										content: cap.text,
+										fontSize: 5, // Scales to ~106px on 1920 canvas (standard subtitle size)
+										fontWeight: "bold",
+										color: "#ffffff",
+										textAlign: "center",
+										"transform.positionY": 280,
+									},
 								},
-							},
-							startTime: ZERO_MEDIA_TIME,
-						});
+								startTime: mediaTimeFromSeconds({ seconds: capStart }),
+							});
 
-						editor.timeline.insertElement({
-							element: hookElement,
-							placement: { mode: "auto" },
-						});
-						editor.timeline.insertElement({
-							element: captionElement,
-							placement: { mode: "auto" },
-						});
+							editor.timeline.insertElement({
+								element: captionElement,
+								placement: { mode: "auto" },
+							});
+						}
 					}
 				}
 			} else {
 				// Blank project with optional captions template
 				if (autoCaptions) {
-					const { hookText } = await generateAiShortsHook(projectName);
+					const analysis = await analyzeVideoForShorts({
+						title: projectName,
+						rawDuration: 30,
+						targetDurationSec: 15,
+					});
+
 					const hookElement = buildTextElement({
 						raw: {
 							name: "Shorts Title",
 							duration: mediaTimeFromSeconds({ seconds: 15 }),
 							params: {
-								content: hookText,
-								fontSize: 48,
+								content: analysis.hookHeadline,
+								fontSize: 7,
 								fontWeight: "bold",
 								color: "#f97316",
 								textAlign: "center",
-								"transform.positionY": -280,
+								"transform.positionY": -380,
 							},
 						},
 						startTime: ZERO_MEDIA_TIME,
@@ -272,7 +377,7 @@ export function VideoToShortsModal({
 				}
 			}
 
-			// 4. Save project state
+			// 5. Save project state
 			setProcessStatus("Saving timeline & preparing editor...");
 			await editor.project.saveCurrentProject();
 

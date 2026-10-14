@@ -593,7 +593,7 @@ export function EmptyView() {
 						{/* Smart Suggestions Card (Exact CapCut Layout) */}
 						<div className="rounded-xl border border-border/80 bg-card/60 p-3.5 space-y-3 shadow-xs">
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-bold text-foreground flex items-center gap-1.5 font-clash">
+								<span className="text-xs font-bold text-foreground flex items-center gap-1.5 font-dm">
 									<Wand2 className="size-3.5 text-amber-500" />
 									Smart suggestions
 								</span>
@@ -695,7 +695,7 @@ export function EmptyView() {
 						{/* Scene Transitions & Fade Section */}
 						<div className="rounded-xl border border-border/80 bg-card/60 p-3.5 space-y-3 shadow-xs">
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-bold text-foreground flex items-center gap-1.5 font-clash">
+								<span className="text-xs font-bold text-foreground flex items-center gap-1.5 font-dm">
 									<Blend className="size-3.5 text-orange-500" />
 									Transitions &amp; Fade Effects
 								</span>
@@ -773,7 +773,7 @@ export function EmptyView() {
 
 						{/* Global Edits Section (Exact CapCut Toggles) */}
 						<div className="space-y-3">
-							<div className="text-xs font-bold text-foreground uppercase tracking-wider font-clash">
+							<div className="text-xs font-bold text-foreground uppercase tracking-wider font-dm">
 								Global edits
 							</div>
 
@@ -995,7 +995,7 @@ export function EmptyView() {
 						{/* Cinematic Video & Image Filters Section */}
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-clash flex items-center gap-1.5">
+								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-dm flex items-center gap-1.5">
 									<Palette className="size-3.5 text-amber-500" />
 									Cinematic Video Filters
 								</span>
@@ -1045,7 +1045,7 @@ export function EmptyView() {
 						{/* Ending & Outro Animations Section */}
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-clash flex items-center gap-1.5">
+								<span className="text-xs font-bold text-foreground uppercase tracking-wider font-dm flex items-center gap-1.5">
 									<Video className="size-3.5 text-blue-500" />
 									Ending Animations
 								</span>
@@ -1101,7 +1101,7 @@ export function EmptyView() {
 					/* Details Tab */
 					<div className="space-y-4">
 						<div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-3">
-							<div className="text-xs font-bold text-foreground font-clash">
+							<div className="text-xs font-bold text-foreground font-dm">
 								Project Metadata
 							</div>
 
@@ -1154,7 +1154,7 @@ export function EmptyView() {
 						{!isPro && (
 							<div className="rounded-lg bg-orange-500/5 border border-orange-500/20 p-3.5 text-center space-y-2">
 								<Crown className="size-5 text-orange-500 mx-auto" />
-								<div className="text-xs font-bold text-foreground font-clash">
+								<div className="text-xs font-bold text-foreground font-dm">
 									Unlock CapCut PRO Features
 								</div>
 								<p className="text-[11px] text-muted-foreground">
@@ -1182,7 +1182,7 @@ export function EmptyView() {
 								<Smile className="size-4" />
 							</div>
 							<div>
-								<DialogTitle className="text-base font-bold font-clash text-zinc-900 dark:text-zinc-100">
+								<DialogTitle className="text-base font-bold font-dm text-zinc-900 dark:text-zinc-100">
 									Retouch Face &amp; Portrait
 								</DialogTitle>
 								<DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400">

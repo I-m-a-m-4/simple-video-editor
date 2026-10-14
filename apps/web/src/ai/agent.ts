@@ -6,7 +6,7 @@ import {
 	GROQ_API_URL,
 } from "./types";
 import { executeAiTool, toGroqTools } from "./tools";
-import { useAiStore } from "./store";
+import { useAiStore, DEFAULT_GROQ_KEY } from "./store";
 
 function generateId(): string {
 	return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -33,21 +33,9 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 		store.setModel("openai/gpt-oss-120b");
 	}
 
-	if (!store.apiKey) {
-		const userMsgId = generateId();
-		store.addMessage({
-			id: userMsgId,
-			role: "user",
-			content: trimmedPrompt,
-		});
-		const assistantMsgId = generateId();
-		store.addMessage({
-			id: assistantMsgId,
-			role: "assistant",
-			content:
-				"Please enter your **Groq API Key** in the settings above to start editing with AI. You can get a free key instantly at [console.groq.com/keys](https://console.groq.com/keys).",
-		});
-		return;
+	const effectiveApiKey = store.apiKey || DEFAULT_GROQ_KEY;
+	if (!store.apiKey && effectiveApiKey) {
+		store.setApiKey(effectiveApiKey);
 	}
 
 	const userMsgId = generateId();
@@ -116,7 +104,7 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${store.apiKey}`,
+					Authorization: `Bearer ${store.apiKey || DEFAULT_GROQ_KEY}`,
 				},
 				body: JSON.stringify({
 					model: store.model,

@@ -88,18 +88,28 @@ export class InsertElementCommand extends Command {
 			);
 
 			if (asset?.width && asset?.height) {
-				const nextCanvasSize = { width: asset.width, height: asset.height };
-				const shouldSetOriginalCanvasSize =
-					!activeProject?.settings.originalCanvasSize;
-				editor.project.updateSettings({
-					settings: {
-						canvasSize: nextCanvasSize,
-						...(shouldSetOriginalCanvasSize
-							? { originalCanvasSize: nextCanvasSize }
-							: {}),
-					},
-					pushHistory: false,
-				});
+				const currentCanvasSize = activeProject?.settings.canvasSize;
+				const isVerticalProject =
+					currentCanvasSize && currentCanvasSize.height > currentCanvasSize.width;
+				const hasPresetOrExplicitSize =
+					activeProject?.settings.canvasSizeMode === "preset" ||
+					isVerticalProject ||
+					Boolean(activeProject?.settings.originalCanvasSize);
+
+				if (!hasPresetOrExplicitSize) {
+					const nextCanvasSize = { width: asset.width, height: asset.height };
+					const shouldSetOriginalCanvasSize =
+						!activeProject?.settings.originalCanvasSize;
+					editor.project.updateSettings({
+						settings: {
+							canvasSize: nextCanvasSize,
+							...(shouldSetOriginalCanvasSize
+								? { originalCanvasSize: nextCanvasSize }
+								: {}),
+						},
+						pushHistory: false,
+					});
+				}
 			}
 
 			if (asset?.type === "video" && asset?.fps) {

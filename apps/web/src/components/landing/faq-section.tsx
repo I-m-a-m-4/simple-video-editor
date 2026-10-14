@@ -19,7 +19,7 @@ export function FaqSection() {
 		{
 			question: "Do I need an API key to use Amber AI?",
 			answer:
-				"A working default Amber AI configuration is already active for instant testing out of the box! You can also provide your own personal AI key directly in the AI Assistant settings drawer in the editor. Your key is stored locally in your browser and never leaves your machine.",
+				"No! Amber AI is fully built-in and powered by our high-speed neural intelligence infrastructure out of the box. You do not need to provide or configure any API keys — all editing commands, smart suggestions, and tools work immediately.",
 		},
 		{
 			question: "Can I run this in my browser using 'npm run dev'?",

@@ -48,7 +48,7 @@ export default function EditorClient({ projectId: propProjectId }: { projectId?:
 		<AuthGuard fallbackMessage="You must be signed in to open and edit video projects in AmberCut.">
 			<MobileGate>
 				<EditorProvider projectId={projectId}>
-					<div className="bg-background flex h-screen w-screen flex-col overflow-hidden">
+					<div className="video-editor-page font-dm bg-background flex h-screen w-screen flex-col overflow-hidden">
 						<DegradedRendererBanner />
 						<EditorHeader />
 						<div className="min-h-0 min-w-0 flex-1">
