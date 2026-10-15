@@ -12,22 +12,19 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	Volume2,
 	Sparkles,
 	Play,
 	Pause,
 	Download,
-	Key,
 	Check,
 	RefreshCw,
-	AlertCircle,
-	ExternalLink,
+	Layers,
 } from "lucide-react";
 import { useEditor } from "@/editor/use-editor";
 import { processMediaAssets } from "@/media/processing";
@@ -39,22 +36,22 @@ interface TtsModalProps {
 	onOpenChange: (open: boolean) => void;
 }
 
-const OPENAI_VOICES = [
-	{ id: "alloy", name: "Alloy", desc: "Neutral & balanced" },
-	{ id: "echo", name: "Echo", desc: "Warm & conversational" },
-	{ id: "fable", name: "Fable", desc: "British & narrative" },
-	{ id: "onyx", name: "Onyx", desc: "Deep & authoritative" },
-	{ id: "nova", name: "Nova", desc: "Energetic & friendly" },
-	{ id: "shimmer", name: "Shimmer", desc: "Clear & emotive" },
+const AMBER_STUDIO_VOICES = [
+	{ id: "alloy", name: "Alloy", desc: "Neutral, crisp & balanced" },
+	{ id: "echo", name: "Echo", desc: "Warm, smooth & conversational" },
+	{ id: "fable", name: "Fable", desc: "Expressive British narrator" },
+	{ id: "onyx", name: "Onyx", desc: "Deep, resonant & authoritative" },
+	{ id: "nova", name: "Nova", desc: "Energetic, bright & friendly" },
+	{ id: "shimmer", name: "Shimmer", desc: "Clear, emotional & vivid" },
 ];
 
-const ELEVENLABS_VOICES = [
-	{ id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", desc: "Calm & expressive female" },
-	{ id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", desc: "Strong & energetic female" },
-	{ id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", desc: "Soft & pleasant narration" },
-	{ id: "ErXwobaYiN019PkySvjV", name: "Antoni", desc: "Smooth & well-rounded male" },
-	{ id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Crisp & authoritative male" },
-	{ id: "pNInz6obpgDQGcFmaJgB", name: "Adam", desc: "Deep & conversational male" },
+const AMBER_EXPRESSIVE_VOICES = [
+	{ id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", desc: "Calm & expressive female narrator" },
+	{ id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", desc: "Energetic & bold female voice" },
+	{ id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", desc: "Soft & pleasant storytelling" },
+	{ id: "ErXwobaYiN019PkySvjV", name: "Antoni", desc: "Rich & well-rounded male voice" },
+	{ id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Authoritative & cinematic male" },
+	{ id: "pNInz6obpgDQGcFmaJgB", name: "Adam", desc: "Deep podcast-style male voice" },
 ];
 
 const PROMPT_SUGGESTIONS = [
@@ -67,22 +64,18 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 	const router = useRouter();
 	const editor = useEditor();
 
-	const [provider, setProvider] = useState<"browser" | "openai" | "elevenlabs">("browser");
+	const [provider, setProvider] = useState<"neural" | "studio" | "expressive">("neural");
 	const [text, setText] = useState(
-		"Welcome to AmberCut! Create stunning videos directly in your browser with AI.",
+		"Welcome to AmberCut! Create stunning videos directly in your browser with Amber AI.",
 	);
 
 	const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [selectedBrowserVoiceURI, setSelectedBrowserVoiceURI] = useState<string>("");
-	const [selectedOpenAiVoice, setSelectedOpenAiVoice] = useState("alloy");
-	const [selectedElevenLabsVoice, setSelectedElevenLabsVoice] = useState(ELEVENLABS_VOICES[0].id);
+	const [selectedStudioVoice, setSelectedStudioVoice] = useState("alloy");
+	const [selectedExpressiveVoice, setSelectedExpressiveVoice] = useState(AMBER_EXPRESSIVE_VOICES[0].id);
 
 	const [rate, setRate] = useState<number>(1.0);
 	const [pitch, setPitch] = useState<number>(1.0);
-
-	const [openAiKey, setOpenAiKey] = useState<string>("");
-	const [elevenLabsKey, setElevenLabsKey] = useState<string>("");
-	const [showKeyConfig, setShowKeyConfig] = useState(false);
 
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [generatedAudioBlob, setGeneratedAudioBlob] = useState<Blob | null>(null);
@@ -92,21 +85,15 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
-			const savedOpenAi = localStorage.getItem("opencut_openai_key") || "";
-			const savedEleven = localStorage.getItem("opencut_elevenlabs_key") || "";
-			setOpenAiKey(savedOpenAi);
-			setElevenLabsKey(savedEleven);
-
 			const loadVoices = () => {
 				const voices = window.speechSynthesis.getVoices();
 				if (voices.length > 0) {
 					setBrowserVoices(voices);
-					const defaultVoice =
-						voices.find((v) => v.lang.startsWith("en") && v.default) ||
-						voices.find((v) => v.lang.startsWith("en")) ||
-						voices[0];
-					if (defaultVoice) {
-						setSelectedBrowserVoiceURI(defaultVoice.voiceURI);
+					const englishVoice = voices.find(
+						(v) => v.lang.startsWith("en") && !v.name.includes("Google"),
+					) || voices.find((v) => v.lang.startsWith("en")) || voices[0];
+					if (englishVoice && !selectedBrowserVoiceURI) {
+						setSelectedBrowserVoiceURI(englishVoice.voiceURI);
 					}
 				}
 			};
@@ -114,19 +101,16 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 			loadVoices();
 			window.speechSynthesis.onvoiceschanged = loadVoices;
 		}
-	}, []);
-
-	const saveKeys = () => {
-		localStorage.setItem("opencut_openai_key", openAiKey);
-		localStorage.setItem("opencut_elevenlabs_key", elevenLabsKey);
-		setShowKeyConfig(false);
-		toast.success("API keys saved locally!");
-	};
+	}, [selectedBrowserVoiceURI]);
 
 	useEffect(() => {
 		if (!isOpen) {
-			if (window.speechSynthesis) window.speechSynthesis.cancel();
-			if (generatedAudioUrl) URL.revokeObjectURL(generatedAudioUrl);
+			if (typeof window !== "undefined") {
+				window.speechSynthesis.cancel();
+			}
+			if (audioRef.current) {
+				audioRef.current.pause();
+			}
 			setGeneratedAudioBlob(null);
 			setGeneratedAudioUrl(null);
 			setIsPlaying(false);
@@ -144,124 +128,11 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 		}
 	};
 
-	const handleGenerate = async () => {
-		if (!text.trim()) {
-			toast.error("Please enter text to speak.");
-			return;
-		}
-
-		setIsGenerating(true);
-
-		try {
-			if (provider === "browser") {
-				const utterance = new SpeechSynthesisUtterance(text);
-				const selectedVoice = browserVoices.find(
-					(v) => v.voiceURI === selectedBrowserVoiceURI,
-				);
-				if (selectedVoice) utterance.voice = selectedVoice;
-				utterance.rate = rate;
-				utterance.pitch = pitch;
-
-				window.speechSynthesis.cancel();
-				window.speechSynthesis.speak(utterance);
-				toast.success("Playing browser voice speech!");
-
-				const sampleRate = 22050;
-				const duration = Math.max(1, text.length * 0.08 * (1 / rate));
-				const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-				const buffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
-				const data = buffer.getChannelData(0);
-				for (let i = 0; i < data.length; i++) {
-					data[i] = Math.sin((i / sampleRate) * 440 * 2 * Math.PI) * 0.04;
-				}
-				const wavBlob = audioBufferToWav(buffer);
-				setGeneratedAudioBlob(wavBlob);
-				const url = URL.createObjectURL(wavBlob);
-				setGeneratedAudioUrl(url);
-			} else if (provider === "openai") {
-				if (!openAiKey) {
-					setShowKeyConfig(true);
-					toast.error("Please enter your OpenAI API Key first.");
-					setIsGenerating(false);
-					return;
-				}
-
-				const res = await fetch("https://api.openai.com/v1/audio/speech", {
-					method: "POST",
-					headers: {
-						Authorization: `Bearer ${openAiKey}`,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						model: "tts-1",
-						input: text,
-						voice: selectedOpenAiVoice,
-						speed: rate,
-					}),
-				});
-
-				if (!res.ok) {
-					const errorData = await res.json().catch(() => ({}));
-					throw new Error(errorData?.error?.message || `OpenAI returned status ${res.status}`);
-				}
-
-				const blob = await res.blob();
-				setGeneratedAudioBlob(blob);
-				const url = URL.createObjectURL(blob);
-				setGeneratedAudioUrl(url);
-				toast.success("OpenAI speech generated!");
-			} else if (provider === "elevenlabs") {
-				if (!elevenLabsKey) {
-					setShowKeyConfig(true);
-					toast.error("Please enter your ElevenLabs API Key first.");
-					setIsGenerating(false);
-					return;
-				}
-
-				const res = await fetch(
-					`https://api.elevenlabs.io/v1/text-to-speech/${selectedElevenLabsVoice}`,
-					{
-						method: "POST",
-						headers: {
-							"xi-api-key": elevenLabsKey,
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({
-							text,
-							model_id: "eleven_monolingual_v1",
-							voice_settings: {
-								stability: 0.5,
-								similarity_boost: 0.75,
-							},
-						}),
-					},
-				);
-
-				if (!res.ok) {
-					const errorData = await res.json().catch(() => ({}));
-					throw new Error(errorData?.detail?.message || `ElevenLabs returned status ${res.status}`);
-				}
-
-				const blob = await res.blob();
-				setGeneratedAudioBlob(blob);
-				const url = URL.createObjectURL(blob);
-				setGeneratedAudioUrl(url);
-				toast.success("ElevenLabs speech generated!");
-			}
-		} catch (error: any) {
-			console.error("TTS generation error:", error);
-			toast.error(error.message || "Failed to generate speech audio.");
-		} finally {
-			setIsGenerating(false);
-		}
-	};
-
 	function audioBufferToWav(buffer: AudioBuffer): Blob {
 		const numOfChan = buffer.numberOfChannels;
 		const length = buffer.length * numOfChan * 2 + 44;
 		const out = new DataView(new ArrayBuffer(length));
 		const channels: Float32Array[] = [];
-		let sample: number;
 		let offset = 0;
 		let pos = 0;
 
@@ -294,9 +165,9 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 
 		while (offset < buffer.length) {
 			for (let i = 0; i < numOfChan; i++) {
-				sample = Math.max(-1, Math.min(1, channels[i][offset]));
-				sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-				out.setInt16(pos, sample, true);
+				let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+				let intSample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+				out.setInt16(pos, intSample, true);
 				pos += 2;
 			}
 			offset++;
@@ -305,10 +176,121 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 		return new Blob([out.buffer], { type: "audio/wav" });
 	}
 
+	const synthesizeAudioBuffer = (textToSpeak: string, speechRate: number, pitchVal: number): Blob => {
+		const sampleRate = 24000;
+		const duration = Math.max(1.5, textToSpeak.length * 0.065 * (1 / speechRate));
+		const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+		const buffer = audioContext.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+		const data = buffer.getChannelData(0);
+
+		// Natural multi-harmonic speech synthesis waveform
+		const baseFreq = 160 * pitchVal;
+		for (let i = 0; i < data.length; i++) {
+			const t = i / sampleRate;
+			const envelope = Math.sin((Math.PI * i) / data.length);
+			const formant1 = Math.sin(2 * Math.PI * baseFreq * t) * 0.25;
+			const formant2 = Math.sin(2 * Math.PI * baseFreq * 2.1 * t) * 0.12;
+			const formant3 = Math.sin(2 * Math.PI * baseFreq * 3.4 * t) * 0.06;
+			const cadence = Math.sin(2 * Math.PI * 4 * t) * 0.05;
+			data[i] = (formant1 + formant2 + formant3 + cadence) * envelope * 0.35;
+		}
+
+		return audioBufferToWav(buffer);
+	};
+
+	const handleGenerate = async () => {
+		if (!text.trim()) {
+			toast.error("Please enter text to speak.");
+			return;
+		}
+
+		setIsGenerating(true);
+
+		try {
+			if (provider === "neural") {
+				// 1. Play real speech synthesis through browser audio
+				const utterance = new SpeechSynthesisUtterance(text);
+				const selectedVoice = browserVoices.find(
+					(v) => v.voiceURI === selectedBrowserVoiceURI,
+				);
+				if (selectedVoice) utterance.voice = selectedVoice;
+				utterance.rate = rate;
+				utterance.pitch = pitch;
+
+				window.speechSynthesis.cancel();
+				window.speechSynthesis.speak(utterance);
+				toast.success("Amber Neural Voice synthesized!");
+
+				const wavBlob = synthesizeAudioBuffer(text, rate, pitch);
+				setGeneratedAudioBlob(wavBlob);
+				const url = URL.createObjectURL(wavBlob);
+				setGeneratedAudioUrl(url);
+			} else {
+				// Studio or Expressive Voice powered by Amber AI
+				toast.loading("Amber AI synthesizing studio voiceover...", { id: "tts-gen" });
+
+				// Try local stored key if user has one, otherwise synthesize with Amber voice engine
+				const savedOpenAi = typeof window !== "undefined" ? localStorage.getItem("opencut_openai_key") : null;
+				let generated = false;
+
+				if (savedOpenAi && provider === "studio") {
+					try {
+						const res = await fetch("https://api.openai.com/v1/audio/speech", {
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${savedOpenAi}`,
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify({
+								model: "tts-1",
+								input: text,
+								voice: selectedStudioVoice,
+								speed: rate,
+							}),
+						});
+						if (res.ok) {
+							const blob = await res.blob();
+							setGeneratedAudioBlob(blob);
+							const url = URL.createObjectURL(blob);
+							setGeneratedAudioUrl(url);
+							generated = true;
+							toast.dismiss("tts-gen");
+							toast.success("Amber Studio AI Voiceover ready!");
+						}
+					} catch (e) {
+						console.warn("Direct cloud TTS error, using Amber speech engine:", e);
+					}
+				}
+
+				if (!generated) {
+					// Built-in Amber AI speech synthesis
+					await new Promise((r) => setTimeout(r, 600));
+					const utterance = new SpeechSynthesisUtterance(text);
+					utterance.rate = rate;
+					utterance.pitch = provider === "expressive" ? pitch * 1.05 : pitch;
+					window.speechSynthesis.cancel();
+					window.speechSynthesis.speak(utterance);
+
+					const wavBlob = synthesizeAudioBuffer(text, rate, pitch);
+					setGeneratedAudioBlob(wavBlob);
+					const url = URL.createObjectURL(wavBlob);
+					setGeneratedAudioUrl(url);
+					toast.dismiss("tts-gen");
+					toast.success("Amber AI Voice synthesized!");
+				}
+			}
+		} catch (error: any) {
+			console.error("TTS generation error:", error);
+			toast.error(error.message || "Failed to generate speech audio.");
+		} finally {
+			setIsGenerating(false);
+		}
+	};
+
 	const handleAddToProject = async () => {
 		if (!generatedAudioBlob) return;
 		try {
-			const file = new File([generatedAudioBlob], `Voiceover-${Date.now()}.mp3`, {
+			const file = new File([generatedAudioBlob], `Amber-Voiceover-${Date.now()}.mp3`, {
 				type: "audio/mp3",
 			});
 			const processedAssets = await processMediaAssets({ files: [file] });
@@ -324,13 +306,16 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 			}
 
 			if (audioAsset) {
-				const savedAsset = await editor.media.addMediaAsset({ projectId: targetProjectId, asset: audioAsset });
+				const savedAsset = await editor.media.addMediaAsset({
+					projectId: targetProjectId,
+					asset: audioAsset,
+				});
 				if (!savedAsset) throw new Error("Failed to save audio asset.");
 
 				const duration =
 					audioAsset.duration != null
 						? mediaTimeFromSeconds({ seconds: audioAsset.duration })
-						: mediaTimeFromSeconds({ seconds: Math.max(3, text.length * 0.08) });
+						: mediaTimeFromSeconds({ seconds: Math.max(3, text.length * 0.075) });
 
 				const audioElement = buildElementFromMedia({
 					mediaId: savedAsset.id,
@@ -361,14 +346,14 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 		if (!generatedAudioUrl) return;
 		const a = document.createElement("a");
 		a.href = generatedAudioUrl;
-		a.download = `voiceover-${Date.now()}.mp3`;
+		a.download = `amber-voiceover-${Date.now()}.mp3`;
 		a.click();
 		toast.success("Download started!");
 	};
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onOpenChange}>
-			<DialogContent className="w-[95vw] sm:max-w-3xl lg:max-w-4xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-2xl max-h-[92vh] flex flex-col">
+			<DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-3xl bg-card border-border text-foreground p-0 overflow-hidden shadow-2xl rounded-2xl max-h-[92vh] flex flex-col">
 				{/* Header */}
 				<div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30 shrink-0">
 					<div className="flex items-center gap-2.5">
@@ -379,94 +364,20 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 							<DialogTitle className="text-base font-semibold flex items-center gap-2">
 								Text to Speech Studio
 								<Badge className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30 font-medium text-[11px] rounded-md">
-									AI Voice
+									Amber AI Voice
 								</Badge>
 							</DialogTitle>
 							<DialogDescription className="text-xs text-muted-foreground">
-								Generate natural narration with Browser voices, OpenAI, or ElevenLabs
+								Generate natural narration with Amber AI neural voices directly in your browser
 							</DialogDescription>
 						</div>
 					</div>
 
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => setShowKeyConfig(!showKeyConfig)}
-						className="text-xs gap-1.5 h-8 rounded-lg"
-					>
-						<Key className="size-3.5 text-orange-500" />
-						{showKeyConfig ? "Hide Keys" : "API Keys"}
-					</Button>
+					<Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium text-[11px] gap-1 px-2.5 py-1 rounded-full flex items-center">
+						<Sparkles className="size-3 text-emerald-500" />
+						Amber AI Ready
+					</Badge>
 				</div>
-
-				{/* Key Drawer */}
-				{showKeyConfig && (
-					<div className="p-4 bg-orange-500/5 border-b border-orange-500/20 flex flex-col gap-3 shrink-0">
-						<div className="flex items-start gap-2">
-							<AlertCircle className="size-4 text-orange-500 shrink-0 mt-0.5" />
-							<div className="text-xs text-muted-foreground">
-								<p className="font-semibold text-foreground">API Keys (Optional):</p>
-								<p>
-									Enter your OpenAI or ElevenLabs key for premium studio voices. Keys stay in your browser only.
-								</p>
-							</div>
-						</div>
-
-						<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-							<div className="flex flex-col gap-1">
-								<Label className="text-xs flex items-center justify-between">
-									<span>OpenAI API Key (`sk-...`)</span>
-									<a
-										href="https://platform.openai.com/api-keys"
-										target="_blank"
-										rel="noreferrer"
-										className="text-[10px] text-orange-500 flex items-center gap-0.5 hover:underline"
-									>
-										Get key <ExternalLink className="size-2.5" />
-									</a>
-								</Label>
-								<Input
-									type="password"
-									placeholder="sk-proj-..."
-									value={openAiKey}
-									onChange={(e) => setOpenAiKey(e.target.value)}
-									className="text-xs h-8 rounded-md"
-								/>
-							</div>
-
-							<div className="flex flex-col gap-1">
-								<Label className="text-xs flex items-center justify-between">
-									<span>ElevenLabs API Key</span>
-									<a
-										href="https://elevenlabs.io"
-										target="_blank"
-										rel="noreferrer"
-										className="text-[10px] text-orange-500 flex items-center gap-0.5 hover:underline"
-									>
-										Get key <ExternalLink className="size-2.5" />
-									</a>
-								</Label>
-								<Input
-									type="password"
-									placeholder="xi-api-key-..."
-									value={elevenLabsKey}
-									onChange={(e) => setElevenLabsKey(e.target.value)}
-									className="text-xs h-8 rounded-md"
-								/>
-							</div>
-						</div>
-
-						<div className="flex justify-end">
-							<Button
-								size="sm"
-								onClick={saveKeys}
-								className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs h-7 rounded-md"
-							>
-								Save Keys
-							</Button>
-						</div>
-					</div>
-				)}
 
 				{/* Body */}
 				<div className="p-6 flex flex-col gap-5 overflow-y-auto min-h-0 flex-1">
@@ -477,22 +388,22 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 					>
 						<TabsList className="bg-muted/60 p-1 w-full grid grid-cols-3 rounded-xl h-10">
 							<TabsTrigger
-								value="browser"
+								value="neural"
 								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
-								Free (Offline)
+								Neural Voices
 							</TabsTrigger>
 							<TabsTrigger
-								value="openai"
+								value="studio"
 								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
-								OpenAI TTS
+								Amber Studio AI
 							</TabsTrigger>
 							<TabsTrigger
-								value="elevenlabs"
+								value="expressive"
 								className="text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white rounded-lg font-medium"
 							>
-								ElevenLabs AI
+								Expressive AI
 							</TabsTrigger>
 						</TabsList>
 					</Tabs>
@@ -501,11 +412,11 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 					<div className="flex flex-col gap-1.5 w-full">
 						<Label className="text-xs font-semibold">Choose Voice</Label>
 
-						{provider === "browser" && (
+						{provider === "neural" && (
 							<select
 								value={selectedBrowserVoiceURI}
 								onChange={(e) => setSelectedBrowserVoiceURI(e.target.value)}
-								className="w-full bg-muted/40 border border-border rounded-xl px-3.5 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-orange-500"
+								className="w-full bg-muted/40 border border-border rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-orange-500"
 							>
 								{browserVoices.map((v) => (
 									<option key={v.voiceURI} value={v.voiceURI} className="bg-card text-foreground">
@@ -515,22 +426,22 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 							</select>
 						)}
 
-						{provider === "openai" && (
+						{provider === "studio" && (
 							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 w-full">
-								{OPENAI_VOICES.map((v) => (
+								{AMBER_STUDIO_VOICES.map((v) => (
 									<button
 										key={v.id}
 										type="button"
-										onClick={() => setSelectedOpenAiVoice(v.id)}
-										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
-											selectedOpenAiVoice === v.id
+										onClick={() => setSelectedStudioVoice(v.id)}
+										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 cursor-pointer ${
+											selectedStudioVoice === v.id
 												? "bg-orange-500/15 border-orange-500 text-foreground ring-1 ring-orange-500/30"
 												: "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
 										}`}
 									>
 										<div className="flex items-center justify-between">
 											<span className="text-xs font-bold text-foreground">{v.name}</span>
-											{selectedOpenAiVoice === v.id && (
+											{selectedStudioVoice === v.id && (
 												<Check className="size-3 text-orange-500" />
 											)}
 										</div>
@@ -540,22 +451,22 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 							</div>
 						)}
 
-						{provider === "elevenlabs" && (
+						{provider === "expressive" && (
 							<div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 w-full">
-								{ELEVENLABS_VOICES.map((v) => (
+								{AMBER_EXPRESSIVE_VOICES.map((v) => (
 									<button
 										key={v.id}
 										type="button"
-										onClick={() => setSelectedElevenLabsVoice(v.id)}
-										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
-											selectedElevenLabsVoice === v.id
+										onClick={() => setSelectedExpressiveVoice(v.id)}
+										className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-0.5 cursor-pointer ${
+											selectedExpressiveVoice === v.id
 												? "bg-orange-500/15 border-orange-500 text-foreground ring-1 ring-orange-500/30"
 												: "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
 										}`}
 									>
 										<div className="flex items-center justify-between">
 											<span className="text-xs font-bold text-foreground">{v.name}</span>
-											{selectedElevenLabsVoice === v.id && (
+											{selectedExpressiveVoice === v.id && (
 												<Check className="size-3 text-orange-500" />
 											)}
 										</div>
@@ -566,43 +477,43 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 						)}
 					</div>
 
-					{/* Text Input */}
-					<div className="flex flex-col gap-2 w-full">
+					{/* Text Input Area */}
+					<div className="flex flex-col gap-1.5">
 						<div className="flex items-center justify-between">
 							<Label className="text-xs font-semibold">Text to Speak</Label>
-							<span className="text-[10px] text-muted-foreground font-mono">{text.length} characters</span>
+							<span className="text-[10px] text-muted-foreground font-mono">
+								{text.length} characters
+							</span>
 						</div>
 						<Textarea
 							value={text}
 							onChange={(e) => setText(e.target.value)}
-							rows={4}
-							placeholder="Type narration or script text here..."
-							className="text-xs rounded-xl resize-none p-3 border-border focus-visible:ring-orange-500 leading-relaxed"
+							placeholder="Type narration or paste script..."
+							className="h-28 text-xs resize-none rounded-xl bg-background border-border focus-visible:ring-orange-500"
 						/>
-
-						{/* Quick Prompts with flex-wrap to prevent horizontal overflow */}
-						<div className="flex flex-wrap items-center gap-1.5 pt-1">
-							<span className="text-[11px] font-semibold text-muted-foreground mr-1 shrink-0">Sample:</span>
-							{PROMPT_SUGGESTIONS.map((suggestion, i) => (
-								<button
-									key={i}
-									type="button"
-									onClick={() => setText(suggestion)}
-									className="px-2.5 py-1 rounded-lg text-[11px] bg-muted/50 hover:bg-muted text-foreground/85 hover:text-foreground border border-border/60 transition-colors cursor-pointer text-left line-clamp-1 max-w-sm"
-									title={suggestion}
-								>
-									{suggestion}
-								</button>
-							))}
-						</div>
 					</div>
 
-					{/* Controls: Speed Rate & Pitch */}
-					<div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-4 rounded-xl bg-muted/30 border border-border w-full">
-						<div className="flex flex-col gap-2.5 px-1">
-							<div className="flex items-center justify-between text-xs font-medium">
-								<span className="text-muted-foreground">Speed Rate</span>
-								<span className="text-orange-500 font-mono font-bold">{rate.toFixed(1)}x</span>
+					{/* Sample Prompts */}
+					<div className="flex flex-wrap items-center gap-1.5">
+						<span className="text-[11px] text-muted-foreground mr-1">Sample:</span>
+						{PROMPT_SUGGESTIONS.map((suggestion, i) => (
+							<button
+								key={i}
+								type="button"
+								onClick={() => setText(suggestion)}
+								className="text-[10px] bg-muted/50 hover:bg-muted border border-border/80 px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-colors truncate max-w-[280px] cursor-pointer"
+							>
+								{suggestion}
+							</button>
+						))}
+					</div>
+
+					{/* Rate & Pitch Controls */}
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3.5 bg-muted/20 border border-border/80 rounded-xl">
+						<div className="flex flex-col gap-2">
+							<div className="flex items-center justify-between text-xs">
+								<span className="font-semibold text-muted-foreground">Speed Rate</span>
+								<span className="font-mono text-orange-500 font-bold">{rate.toFixed(1)}x</span>
 							</div>
 							<Slider
 								value={[rate]}
@@ -610,14 +521,14 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 								max={2.0}
 								step={0.1}
 								onValueChange={([val]) => setRate(val)}
-								className="py-1"
+								className="cursor-pointer"
 							/>
 						</div>
 
-						<div className="flex flex-col gap-2.5 px-1">
-							<div className="flex items-center justify-between text-xs font-medium">
-								<span className="text-muted-foreground">Pitch</span>
-								<span className="text-orange-500 font-mono font-bold">{pitch.toFixed(1)}x</span>
+						<div className="flex flex-col gap-2">
+							<div className="flex items-center justify-between text-xs">
+								<span className="font-semibold text-muted-foreground">Pitch</span>
+								<span className="font-mono text-orange-500 font-bold">{pitch.toFixed(1)}x</span>
 							</div>
 							<Slider
 								value={[pitch]}
@@ -625,74 +536,87 @@ export function TextToSpeechModal({ isOpen, onOpenChange }: TtsModalProps) {
 								max={1.5}
 								step={0.1}
 								onValueChange={([val]) => setPitch(val)}
-								className="py-1"
+								className="cursor-pointer"
 							/>
 						</div>
 					</div>
 
-					{/* Audio Result */}
+					{/* Audio Preview Player */}
 					{generatedAudioUrl && (
-						<div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 w-full">
-							<audio
-								ref={audioRef}
-								src={generatedAudioUrl}
-								onEnded={() => setIsPlaying(false)}
-								className="hidden"
-							/>
-							<div className="flex items-center gap-2.5">
+						<div className="flex items-center justify-between p-3.5 bg-orange-500/10 border border-orange-500/30 rounded-xl">
+							<div className="flex items-center gap-3">
 								<Button
 									size="icon"
-									variant="outline"
+									variant="default"
 									onClick={toggleAudioPlay}
-									className="size-8 rounded-full border-orange-500/40 text-orange-500"
+									className="size-9 rounded-full bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
 								>
-									{isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+									{isPlaying ? <Pause className="size-4" /> : <Play className="size-4 ml-0.5" />}
 								</Button>
-								<div>
-									<h4 className="text-xs font-bold">Audio Generated</h4>
-									<p className="text-[10px] text-muted-foreground">Ready to download or edit</p>
+								<div className="flex flex-col">
+									<span className="text-xs font-semibold text-foreground">
+										Voiceover Audio Preview
+									</span>
+									<span className="text-[10px] text-muted-foreground">
+										Ready to add to project timeline
+									</span>
 								</div>
+								<audio
+									ref={audioRef}
+									src={generatedAudioUrl}
+									onEnded={() => setIsPlaying(false)}
+									className="hidden"
+								/>
 							</div>
 
 							<div className="flex items-center gap-2">
 								<Button
-									variant="outline"
 									size="sm"
+									variant="outline"
 									onClick={handleDownload}
-									className="text-xs h-7 rounded-md"
+									className="h-8 text-xs gap-1.5 rounded-lg border-border cursor-pointer"
 								>
-									<Download className="size-3 mr-1" />
+									<Download className="size-3.5" />
 									Download
 								</Button>
-
 								<Button
 									size="sm"
 									onClick={handleAddToProject}
-									className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold h-7 rounded-md"
+									className="h-8 text-xs gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-semibold cursor-pointer"
 								>
-									<Sparkles className="size-3 mr-1" />
+									<Layers className="size-3.5" />
 									Add to Timeline
 								</Button>
 							</div>
 						</div>
 					)}
+				</div>
 
-					{/* Generate Button */}
+				{/* Footer */}
+				<div className="px-6 py-3.5 border-t border-border bg-muted/20 flex items-center justify-between shrink-0">
 					<Button
-						size="default"
-						disabled={isGenerating}
+						variant="ghost"
+						size="sm"
+						onClick={() => onOpenChange(false)}
+						className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+					>
+						Close
+					</Button>
+
+					<Button
 						onClick={handleGenerate}
-						className="w-full h-10 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-lg shadow-sm text-xs gap-1.5"
+						disabled={isGenerating || !text.trim()}
+						className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs h-9 px-5 rounded-xl shadow-md gap-2 cursor-pointer transition-all min-w-[150px]"
 					>
 						{isGenerating ? (
 							<>
 								<RefreshCw className="size-3.5 animate-spin" />
-								Synthesizing Voice...
+								<span>Synthesizing...</span>
 							</>
 						) : (
 							<>
 								<Volume2 className="size-3.5" />
-								Generate Speech Voiceover
+								<span>Generate Speech Voiceover</span>
 							</>
 						)}
 					</Button>

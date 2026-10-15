@@ -10,9 +10,19 @@ export function isUserAdmin(email?: string | null): boolean {
 	return ADMIN_EMAILS.includes(email.trim().toLowerCase());
 }
 
+export type ProPlanTier =
+	| "creator_monthly"
+	| "creator_annual"
+	| "director_monthly"
+	| "director_annual"
+	| "monthly"
+	| "annual"
+	| "admin"
+	| null;
+
 export interface ProState {
 	isPro: boolean;
-	plan: "monthly" | "annual" | "admin" | null;
+	plan: ProPlanTier;
 	transactionId: string | null;
 	customerEmail: string | null;
 	unlockedAt: string | null;
@@ -21,7 +31,7 @@ export interface ProState {
 	closeModal: () => void;
 	setProStatus: (params: {
 		isPro: boolean;
-		plan: "monthly" | "annual" | "admin";
+		plan: ProPlanTier;
 		transactionId?: string;
 		customerEmail?: string;
 	}) => void;

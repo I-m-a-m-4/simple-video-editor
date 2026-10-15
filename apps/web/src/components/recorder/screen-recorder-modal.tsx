@@ -168,7 +168,10 @@ export function ScreenRecorderModal({
 					frameRate: { ideal: 60, max: 60 },
 				},
 				audio: isSystemAudioEnabled,
-			});
+				selfBrowserSurface: "exclude",
+				systemAudio: "include",
+				surfaceSwitching: "include",
+			} as any);
 
 			if (screenVideoRef.current) {
 				screenVideoRef.current.srcObject = screen;

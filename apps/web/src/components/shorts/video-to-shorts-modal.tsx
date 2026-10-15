@@ -28,12 +28,17 @@ import {
 	X,
 	Subtitles,
 	Zap,
+	Blend,
 } from "lucide-react";
 
 import { buildElementFromMedia, buildTextElement } from "@/timeline/element-utils";
 import { mediaTimeFromSeconds, ZERO_MEDIA_TIME } from "@/wasm";
 import { useAiStore, DEFAULT_GROQ_KEY } from "@/ai/store";
 import { GROQ_API_URL } from "@/ai/types";
+import {
+	applyTransitionBetweenClips,
+	type TransitionType,
+} from "@/transitions/apply-transition";
 
 interface ShortsCaptionChunk {
 	relativeStart: number;
@@ -41,10 +46,26 @@ interface ShortsCaptionChunk {
 	text: string;
 }
 
+export interface ShortsSegment {
+	sourceStart: number;
+	duration: number;
+	label?: string;
+}
+
 interface ShortsAnalysisResult {
-	highlightStartTime: number;
+	segments: ShortsSegment[];
 	hookHeadline: string;
 	captions: ShortsCaptionChunk[];
+}
+
+function wrapTextForMobile(text: string, maxWordsPerLine = 3): string {
+	const words = text.trim().split(/\s+/);
+	if (words.length <= maxWordsPerLine) return text;
+	const lines: string[] = [];
+	for (let i = 0; i < words.length; i += maxWordsPerLine) {
+		lines.push(words.slice(i, i + maxWordsPerLine).join(" "));
+	}
+	return lines.join("\n");
 }
 
 async function analyzeVideoForShorts({
@@ -58,34 +79,71 @@ async function analyzeVideoForShorts({
 	targetDurationSec: number;
 	apiKey?: string;
 }): Promise<ShortsAnalysisResult> {
-	const groqKey = apiKey || useAiStore.getState().apiKey || DEFAULT_GROQ_KEY;
+	const amberKey = apiKey || useAiStore.getState().apiKey || DEFAULT_GROQ_KEY;
 	const cleanTitle = title.replace(/\.[^/.]+$/, "").replace(/ \(Shorts\)/i, "");
-	const maxHighlightStart = Math.max(0, Math.floor(rawDuration - targetDurationSec));
 
-	// Default fallback: pick a smart segment 20-30% into the video where action usually peaks
-	const fallbackStart =
-		maxHighlightStart > 30 ? Math.min(maxHighlightStart, Math.round(rawDuration * 0.22)) : 0;
+	// Default fallback: Intelligent multi-cut segmentation across the long video
+	const fallbackSegments: ShortsSegment[] =
+		rawDuration > targetDurationSec * 1.4
+			? [
+					{
+						sourceStart: Math.min(
+							rawDuration - 8,
+							Math.max(0, Math.round(rawDuration * 0.12)),
+						),
+						duration: Math.round(targetDurationSec * 0.33),
+						label: "Viral Hook Moment",
+					},
+					{
+						sourceStart: Math.min(
+							rawDuration - 10,
+							Math.max(0, Math.round(rawDuration * 0.46)),
+						),
+						duration: Math.round(targetDurationSec * 0.37),
+						label: "Core Highlight Action",
+					},
+					{
+						sourceStart: Math.min(
+							rawDuration - 8,
+							Math.max(0, Math.round(rawDuration * 0.8)),
+						),
+						duration: Math.max(
+							4,
+							targetDurationSec -
+								Math.round(targetDurationSec * 0.33) -
+								Math.round(targetDurationSec * 0.37),
+						),
+						label: "Peak Climax & Reaction",
+					},
+				]
+			: [
+					{
+						sourceStart: 0,
+						duration: Math.min(rawDuration, targetDurationSec),
+						label: "Full Highlight Cut",
+					},
+				];
 
 	const fallbackCaptions: ShortsCaptionChunk[] = [
-		{ relativeStart: 0, duration: Math.min(6, targetDurationSec / 4), text: "Wait till you see this! 👀" },
+		{ relativeStart: 0, duration: Math.min(5, targetDurationSec / 4), text: "Wait till you see this! 👀" },
 		{
-			relativeStart: Math.min(6, targetDurationSec / 4),
-			duration: Math.min(8, targetDurationSec / 3),
-			text: `${cleanTitle.slice(0, 32)}...`,
+			relativeStart: Math.min(5, targetDurationSec / 4),
+			duration: Math.min(7, targetDurationSec / 3),
+			text: `${cleanTitle.slice(0, 26)}...`,
 		},
 		{
-			relativeStart: Math.min(14, (targetDurationSec * 2) / 3),
-			duration: Math.min(8, targetDurationSec / 3),
-			text: "The reaction was completely unbelievable! 🔥",
+			relativeStart: Math.min(12, (targetDurationSec * 2) / 3),
+			duration: Math.min(7, targetDurationSec / 3),
+			text: "The reaction was unbelievable! 🔥",
 		},
 		{
-			relativeStart: Math.max(0, targetDurationSec - 6),
-			duration: 6,
+			relativeStart: Math.max(0, targetDurationSec - 5),
+			duration: 5,
 			text: "Drop a like if you agree! 🚀",
 		},
 	].filter((c) => c.relativeStart < targetDurationSec);
 
-	if (groqKey) {
+	if (amberKey) {
 		const candidateModels = [
 			"openai/gpt-oss-120b",
 			"qwen/qwen3.8-27b",
@@ -98,7 +156,7 @@ async function analyzeVideoForShorts({
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${groqKey}`,
+						Authorization: `Bearer ${amberKey}`,
 					},
 					body: JSON.stringify({
 						model,
@@ -106,11 +164,11 @@ async function analyzeVideoForShorts({
 							{
 								role: "system",
 								content:
-									"You are an elite viral video editor for YouTube Shorts and TikTok. Given a video topic and total duration, choose the most viral highlightStartTime in seconds (e.g. 15-90s, skipping boring intros). Create a punchy 3-5 word hook headline and 3-5 sequential dynamic captions with relativeStart and duration (relative to the short). Return strictly valid JSON: {\"highlightStartTime\": number, \"hookHeadline\": string, \"captions\": [{\"relativeStart\": number, \"duration\": number, \"text\": string}]}.",
+									"You are an elite viral video editor for YouTube Shorts and TikTok. Given a long video topic and duration, pick 2 to 3 dynamic segments across different parts of the video (Hook, Core Action, and Climax/Ending) that together equal the target length. Create a punchy 3-5 word hook headline and 3-5 sequential captions. Return strictly JSON: {\"segments\": [{\"sourceStart\": number, \"duration\": number, \"label\": string}], \"hookHeadline\": string, \"captions\": [{\"relativeStart\": number, \"duration\": number, \"text\": string}]}.",
 							},
 							{
 								role: "user",
-								content: `Video topic: "${cleanTitle}", total duration: ${Math.round(rawDuration)}s, target clip length: ${targetDurationSec}s. Find the peak moment and captions.`,
+								content: `Video topic: "${cleanTitle}", total duration: ${Math.round(rawDuration)}s, target clip length: ${targetDurationSec}s. Find peak moments from different parts of the video and return multi-cut segments with captions.`,
 							},
 						],
 						response_format: { type: "json_object" },
@@ -123,17 +181,46 @@ async function analyzeVideoForShorts({
 					const rawContent = data.choices?.[0]?.message?.content || "{}";
 					const parsed = JSON.parse(rawContent);
 
-					const highlightStartTime =
-						typeof parsed.highlightStartTime === "number" &&
-						parsed.highlightStartTime >= 0 &&
-						parsed.highlightStartTime <= maxHighlightStart
-							? Math.round(parsed.highlightStartTime)
-							: fallbackStart;
+					let segments: ShortsSegment[] = [];
+					if (Array.isArray(parsed.segments) && parsed.segments.length > 0) {
+						segments = parsed.segments.map((s: any, idx: number) => ({
+							sourceStart: Math.min(
+								Math.max(0, Number(s.sourceStart) || 0),
+								Math.max(0, rawDuration - 5),
+							),
+							duration: Math.max(3, Number(s.duration) || Math.round(targetDurationSec / parsed.segments.length)),
+							label: s.label || `Viral Cut #${idx + 1}`,
+						}));
+
+						// Normalize total duration to targetDurationSec
+						const totalSegSec = segments.reduce((sum, s) => sum + s.duration, 0);
+						if (Math.abs(totalSegSec - targetDurationSec) > 3) {
+							const scale = targetDurationSec / (totalSegSec || 1);
+							segments = segments.map((s) => ({
+								...s,
+								duration: Math.max(3, Math.round(s.duration * scale)),
+							}));
+						}
+					} else if (typeof parsed.highlightStartTime === "number") {
+						// Single cut fallback
+						segments = [
+							{
+								sourceStart: Math.min(
+									Math.max(0, Math.round(parsed.highlightStartTime)),
+									Math.max(0, rawDuration - targetDurationSec),
+								),
+								duration: targetDurationSec,
+								label: "Viral Highlight",
+							},
+						];
+					} else {
+						segments = fallbackSegments;
+					}
 
 					const hookHeadline =
 						typeof parsed.hookHeadline === "string" && parsed.hookHeadline.trim()
 							? parsed.hookHeadline.trim()
-							: `${cleanTitle.slice(0, 28)} 🔥`;
+							: `${cleanTitle.slice(0, 24)} 🔥`;
 
 					const captions: ShortsCaptionChunk[] =
 						Array.isArray(parsed.captions) && parsed.captions.length > 0
@@ -145,20 +232,20 @@ async function analyzeVideoForShorts({
 							: fallbackCaptions;
 
 					return {
-						highlightStartTime,
+						segments,
 						hookHeadline,
 						captions,
 					};
 				}
 			} catch (err) {
-				console.warn(`Groq model ${model} failed, trying next:`, err);
+				console.warn(`Amber AI model ${model} failed, trying next:`, err);
 			}
 		}
 	}
 
 	return {
-		highlightStartTime: fallbackStart,
-		hookHeadline: `${cleanTitle.slice(0, 28)} 🔥`,
+		segments: fallbackSegments,
+		hookHeadline: `${cleanTitle.slice(0, 24)} 🔥`,
 		captions: fallbackCaptions,
 	};
 }
@@ -179,6 +266,7 @@ export function VideoToShortsModal({
 	const [projectName, setProjectName] = useState("Viral Shorts Clip #1");
 	const [selectedFile, setSelectedFile] = useState<File | null>(null);
 	const [clipDuration, setClipDuration] = useState<"15" | "30" | "60" | "full">("30");
+	const [selectedTransition, setSelectedTransition] = useState<TransitionType>("zoom_in");
 	const [autoCaptions, setAutoCaptions] = useState(true);
 	const [autoReframe, setAutoReframe] = useState(true);
 	const [isProcessing, setIsProcessing] = useState(false);
@@ -223,7 +311,7 @@ export function VideoToShortsModal({
 				fps: { numerator: 30, denominator: 1 },
 			});
 
-			// Mark originalCanvasSize explicitly so canvas is locked at 9:16
+			// Lock canvas strictly at 9:16
 			editor.project.updateSettings({
 				settings: {
 					canvasSize: { width: 1080, height: 1920 },
@@ -251,13 +339,12 @@ export function VideoToShortsModal({
 
 				const videoAsset = processedAssets.find((a) => a.type === "video") ?? processedAssets[0];
 				if (videoAsset && savedVideoAsset) {
-					setProcessStatus("Groq AI analyzing audio & finding viral highlight...");
+					setProcessStatus("Amber AI analyzing footage & selecting viral moments...");
 					const rawDuration = videoAsset.duration ?? 30;
 					const targetDurationSec =
 						clipDuration === "full"
 							? rawDuration
 							: Math.min(rawDuration, Number(clipDuration) || 30);
-					const elementDuration = mediaTimeFromSeconds({ seconds: targetDurationSec });
 
 					const analysis = await analyzeVideoForShorts({
 						title: projectName,
@@ -265,47 +352,80 @@ export function VideoToShortsModal({
 						targetDurationSec,
 					});
 
-					setProcessStatus("Applying 9:16 Auto-Reframe & timeline trimming...");
-					const trimStart = mediaTimeFromSeconds({ seconds: analysis.highlightStartTime });
+					setProcessStatus("Applying 9:16 Auto-Reframe & multi-clip timeline cuts...");
 
-					// Build video element trimmed to the peak highlight segment
-					const videoElement = buildElementFromMedia({
-						mediaId: savedVideoAsset.id,
-						mediaType: "video",
-						name: videoAsset.name,
-						duration: elementDuration,
-						startTime: ZERO_MEDIA_TIME,
-					});
-					videoElement.trimStart = trimStart;
-					videoElement.sourceDuration = mediaTimeFromSeconds({ seconds: rawDuration });
+					// Insert multiple compiled cuts sequentially onto the main timeline
+					let currentTimelineStartSec = 0;
+					const insertedVideoElements: any[] = [];
 
-					// Zoom in 1.78x so 16:9 widescreen video fills the 9:16 vertical frame cleanly
-					if (autoReframe && videoElement.params) {
-						videoElement.params["transform.scaleX"] = 1.78;
-						videoElement.params["transform.scaleY"] = 1.78;
-						videoElement.params["transform.positionX"] = 0;
-						videoElement.params["transform.positionY"] = 0;
+					for (let i = 0; i < analysis.segments.length; i++) {
+						const seg = analysis.segments[i];
+						const segDuration = mediaTimeFromSeconds({ seconds: seg.duration });
+						const segStart = mediaTimeFromSeconds({ seconds: currentTimelineStartSec });
+						const trimStart = mediaTimeFromSeconds({ seconds: seg.sourceStart });
+
+						const videoElement = buildElementFromMedia({
+							mediaId: savedVideoAsset.id,
+							mediaType: "video",
+							name: `${videoAsset.name} [${seg.label || `Cut #${i + 1}`}]`,
+							duration: segDuration,
+							startTime: segStart,
+						});
+						videoElement.trimStart = trimStart;
+						videoElement.sourceDuration = mediaTimeFromSeconds({ seconds: rawDuration });
+
+						// Zoom in 1.78x so 16:9 widescreen video fills the 9:16 vertical frame cleanly
+						if (autoReframe && videoElement.params) {
+							videoElement.params["transform.scaleX"] = 1.78;
+							videoElement.params["transform.scaleY"] = 1.78;
+							videoElement.params["transform.positionX"] = 0;
+							videoElement.params["transform.positionY"] = 0;
+						}
+
+						editor.timeline.insertElement({
+							element: videoElement,
+							placement: { mode: "auto" },
+						});
+						insertedVideoElements.push(videoElement);
+						currentTimelineStartSec += seg.duration;
 					}
 
-					// Insert video onto timeline
-					editor.timeline.insertElement({
-						element: videoElement,
-						placement: { mode: "auto" },
-					});
+					// 3. Automatically apply smooth transitions between the consecutive cuts!
+					if (insertedVideoElements.length > 1 && selectedTransition) {
+						setProcessStatus(`Adding "${selectedTransition.replace(/_/g, " ")}" transitions between cuts...`);
+						const activeScene = editor.scenes.getActiveSceneOrNull();
+						const mainTrackId = activeScene?.tracks.main.id || "main-track";
 
-					// 3. Top Viral Hook Headline (crisp, proportionate text size: fontSize 7)
+						for (let i = 0; i < insertedVideoElements.length - 1; i++) {
+							try {
+								applyTransitionBetweenClips({
+									editor,
+									outgoingClip: insertedVideoElements[i],
+									incomingClip: insertedVideoElements[i + 1],
+									trackId: mainTrackId,
+									transitionType: selectedTransition,
+									duration: 0.6,
+								});
+							} catch (e) {
+								console.warn("Transition apply error:", e);
+							}
+						}
+					}
+
+					// 4. Top Viral Hook Headline (auto-wrapped and calibrated size so text never overflows)
 					setProcessStatus("Creating animated viral hook & subtitles...");
+					const wrappedHeadline = wrapTextForMobile(analysis.hookHeadline, 3);
 					const hookElement = buildTextElement({
 						raw: {
 							name: "Viral Hook Headline",
-							duration: mediaTimeFromSeconds({ seconds: Math.min(5, targetDurationSec) }),
+							duration: mediaTimeFromSeconds({ seconds: Math.min(6, targetDurationSec) }),
 							params: {
-								content: analysis.hookHeadline,
-								fontSize: 7, // Scales to ~150px on 1920 canvas (crisp, prominent, well-fitted)
+								content: wrappedHeadline,
+								fontSize: 4.2, // Clean, proportional, fits comfortably within 1080px canvas
 								fontWeight: "bold",
 								color: "#f97316",
 								textAlign: "center",
-								"transform.positionY": -420,
+								"transform.positionY": -380,
 							},
 						},
 						startTime: ZERO_MEDIA_TIME,
@@ -316,7 +436,7 @@ export function VideoToShortsModal({
 						placement: { mode: "auto" },
 					});
 
-					// 4. Dynamic Captions (properly timed subtitle chunks with pill background)
+					// 5. Dynamic Captions (properly timed subtitle chunks with pill background)
 					if (autoCaptions && analysis.captions.length > 0) {
 						for (const cap of analysis.captions) {
 							const capStart = Math.min(targetDurationSec, Math.max(0, cap.relativeStart));
@@ -329,7 +449,7 @@ export function VideoToShortsModal({
 									duration: mediaTimeFromSeconds({ seconds: capDuration }),
 									params: {
 										content: cap.text,
-										fontSize: 5, // Scales to ~106px on 1920 canvas (standard subtitle size)
+										fontSize: 4.5,
 										fontWeight: "bold",
 										color: "#ffffff",
 										textAlign: "center",
@@ -355,13 +475,14 @@ export function VideoToShortsModal({
 						targetDurationSec: 15,
 					});
 
+					const wrappedHeadline = wrapTextForMobile(analysis.hookHeadline, 3);
 					const hookElement = buildTextElement({
 						raw: {
 							name: "Shorts Title",
 							duration: mediaTimeFromSeconds({ seconds: 15 }),
 							params: {
-								content: analysis.hookHeadline,
-								fontSize: 7,
+								content: wrappedHeadline,
+								fontSize: 4.2,
 								fontWeight: "bold",
 								color: "#f97316",
 								textAlign: "center",
@@ -377,12 +498,12 @@ export function VideoToShortsModal({
 				}
 			}
 
-			// 5. Save project state
+			// 6. Save project state
 			setProcessStatus("Saving timeline & preparing editor...");
 			await editor.project.saveCurrentProject();
 
 			await new Promise((r) => setTimeout(r, 200));
-			toast.success("Shorts project created! 9:16 Canvas & AI Timeline ready.");
+			toast.success("Shorts project created! Multi-clip timeline & transitions ready.");
 			onOpenChange(false);
 			router.push(`/editor?project_id=${projectId}`);
 		} catch (error) {
@@ -394,7 +515,7 @@ export function VideoToShortsModal({
 
 	return (
 		<Dialog open={isOpen} onOpenChange={isProcessing ? () => {} : onOpenChange}>
-			<DialogContent className="max-w-xl bg-card border border-border p-6 shadow-2xl rounded-2xl">
+			<DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-3xl bg-card border border-border p-6 sm:p-7 shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
 				<DialogHeader className="space-y-1.5 text-left">
 					<div className="flex items-center gap-2">
 						<div className="size-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-xs">
@@ -408,7 +529,7 @@ export function VideoToShortsModal({
 						</Badge>
 					</div>
 					<DialogDescription className="text-xs text-muted-foreground">
-						Convert horizontal widescreen videos into viral vertical clips for TikTok, Shorts, and Reels.
+						Convert horizontal widescreen videos into viral vertical clips for TikTok, Shorts, and Reels with Amber AI multi-clip cuts and transitions.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -458,7 +579,7 @@ export function VideoToShortsModal({
 									Click to upload or drag & drop video
 								</span>
 								<span className="text-[11px] text-muted-foreground mt-0.5">
-									MP4, MOV, WebM (or leave empty to create a blank 9:16 timeline)
+									MP4, MOV, WebM, MKV (or leave empty to create a blank 9:16 timeline)
 								</span>
 								<input
 									ref={fileInputRef}
@@ -488,10 +609,13 @@ export function VideoToShortsModal({
 
 					{/* Clip Target Duration */}
 					<div className="space-y-2 text-left">
-						<Label className="text-xs font-semibold text-foreground">
-							Target Clip Duration
-						</Label>
-						<div className="grid grid-cols-4 gap-2">
+						<div className="flex items-center justify-between">
+							<Label className="text-xs font-semibold text-foreground">
+								Target Clip Duration
+							</Label>
+							<span className="text-[10px] text-muted-foreground">Multi-cut highlight compilation</span>
+						</div>
+						<div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
 							{[
 								{ id: "15", label: "15 Seconds", sub: "Stories / Quick" },
 								{ id: "30", label: "30 Seconds", sub: "Standard Shorts" },
@@ -502,7 +626,7 @@ export function VideoToShortsModal({
 									key={item.id}
 									type="button"
 									onClick={() => setClipDuration(item.id as any)}
-									className={`p-2 rounded-xl border text-left flex flex-col gap-0.5 transition-all cursor-pointer ${
+									className={`p-2.5 rounded-xl border text-left flex flex-col gap-0.5 transition-all cursor-pointer ${
 										clipDuration === item.id
 											? "border-orange-500 bg-orange-500/10 text-foreground ring-1 ring-orange-500/20"
 											: "border-border bg-background hover:bg-muted text-muted-foreground"
@@ -510,6 +634,40 @@ export function VideoToShortsModal({
 								>
 									<span className="text-xs font-bold">{item.label}</span>
 									<span className="text-[9px] text-muted-foreground truncate">{item.sub}</span>
+								</button>
+							))}
+						</div>
+					</div>
+
+					{/* Transition Selection Between Cuts */}
+					<div className="space-y-2 text-left">
+						<div className="flex items-center justify-between">
+							<Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+								<Blend className="size-3.5 text-orange-500" />
+								Transitions Between Cuts
+							</Label>
+							<span className="text-[10px] text-muted-foreground">Dynamic cuts across footage</span>
+						</div>
+						<div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+							{[
+								{ id: "zoom_in", label: "Dynamic Zoom", desc: "Punch in" },
+								{ id: "cross_dissolve", label: "Cross Dissolve", desc: "Smooth blend" },
+								{ id: "glitch", label: "Viral Glitch", desc: "High energy" },
+								{ id: "dip_to_black", label: "Dip to Black", desc: "Film cut" },
+								{ id: "slide_left", label: "Slide Whip", desc: "Fast lateral" },
+							].map((t) => (
+								<button
+									key={t.id}
+									type="button"
+									onClick={() => setSelectedTransition(t.id as TransitionType)}
+									className={`p-2 rounded-xl border text-left flex flex-col gap-0.5 transition-all cursor-pointer ${
+										selectedTransition === t.id
+											? "border-orange-500 bg-orange-500/10 text-foreground ring-1 ring-orange-500/20"
+											: "border-border bg-background hover:bg-muted text-muted-foreground"
+									}`}
+								>
+									<span className="text-xs font-bold">{t.label}</span>
+									<span className="text-[9px] text-muted-foreground truncate">{t.desc}</span>
 								</button>
 							))}
 						</div>
@@ -541,7 +699,7 @@ export function VideoToShortsModal({
 									Dynamic Captions
 								</span>
 								<span className="text-[10px] text-muted-foreground">
-									Prepare animated subtitles track
+									Auto-wrapped animated subtitles
 								</span>
 							</div>
 							<Switch
