@@ -30,6 +30,8 @@ import { cn } from "@/utils/ui";
 import { Smartphone } from "lucide-react";
 import { usePanelStore } from "@/editor/panel-store";
 
+import { UserProfileMenu } from "@/components/auth/user-profile-menu";
+
 export function EditorHeader() {
 	return (
 		<header className="bg-background flex h-[3.4rem] items-center justify-between px-2 sm:px-3 pt-0.5 border-b border-border/40">
@@ -44,6 +46,7 @@ export function EditorHeader() {
 				</div>
 				<ExportButton />
 				<ThemeToggle />
+				<UserProfileMenu variant="avatar" align="end" />
 			</nav>
 		</header>
 	);

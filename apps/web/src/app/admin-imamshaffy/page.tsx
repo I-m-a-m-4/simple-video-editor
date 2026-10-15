@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { UserProfileMenu } from "@/components/auth/user-profile-menu";
 import {
 	getTelemetryData,
 	clearTelemetryData,
@@ -568,6 +569,8 @@ export default function AdminImamShafiPage() {
 								Open Video Editor
 							</Button>
 						</Link>
+
+						<UserProfileMenu variant="avatar" align="end" />
 					</div>
 				</div>
 

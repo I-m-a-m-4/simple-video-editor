@@ -48,6 +48,7 @@ import { VideoToShortsModal } from "@/components/shorts/video-to-shorts-modal";
 import { ProUpgradeModal } from "@/components/editor/pro-upgrade-modal";
 import { useProStore } from "@/stores/pro-store";
 import { useAuth } from "@/auth/auth-context";
+import { UserProfileMenu } from "@/components/auth/user-profile-menu";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
 	Plus,
@@ -127,18 +128,6 @@ export default function ProjectsPage() {
 		openCreateProject("standard", "New Project");
 	};
 
-	const displayName = user?.name || (user?.email ? user.email.split("@")[0] : "Creator");
-	const getInitials = (name?: string, email?: string) => {
-		if (name?.trim()) {
-			const parts = name.trim().split(/\s+/);
-			if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-			return name.slice(0, 2).toUpperCase();
-		}
-		if (email?.trim()) return email.slice(0, 2).toUpperCase();
-		return "CR";
-	};
-	const userInitials = getInitials(user?.name, user?.email);
-
 	useEffect(() => {
 		setMounted(true);
 		if (!editor.project.getIsInitialized()) {
@@ -170,47 +159,8 @@ export default function ProjectsPage() {
 						</span>
 					</Link>
 
-					{/* User Pro Card */}
-					<div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between gap-2 mt-1 hover:border-orange-500/30 transition-colors">
-						<div className="flex items-center gap-2.5 min-w-0">
-							{user?.image ? (
-								<Image
-									src={user.image}
-									alt={displayName}
-									width={32}
-									height={32}
-									className="size-8 rounded-full object-cover ring-1 ring-orange-500/30 shrink-0"
-								/>
-							) : (
-								<div className="size-8 rounded-full bg-gradient-to-tr from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm shadow-orange-500/20">
-									{userInitials}
-								</div>
-							)}
-							<div className="flex flex-col min-w-0">
-								<span className="text-xs font-semibold truncate text-foreground">
-									{displayName}
-								</span>
-								<span className="text-[10px] text-muted-foreground truncate">
-									{isPro ? "Pro Member" : "Free Creator"}
-								</span>
-							</div>
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								onNavigate?.();
-								openProModal();
-							}}
-							className={`px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
-								isPro
-									? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border border-emerald-500/30"
-									: "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white"
-							}`}
-						>
-							<Crown className="size-3" />
-							{isPro ? "PRO" : "Upgrade"}
-						</button>
-					</div>
+					{/* User Profile Card with Dropdown & Logout */}
+					<UserProfileMenu variant="card" onAction={onNavigate} />
 				</div>
 
 				{/* Navigation Groups */}
@@ -480,6 +430,8 @@ export default function ProjectsPage() {
 								<Plus className="size-3.5" />
 								New Project
 							</Button>
+
+							<UserProfileMenu variant="avatar" align="end" />
 						</div>
 					</header>
 
