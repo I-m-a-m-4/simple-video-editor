@@ -93,7 +93,7 @@ export function FeaturesGrid() {
 						All-In-One SaaS Feature Suite
 					</Badge>
 					<h2 className="text-3xl sm:text-5xl font-extrabold font-clash tracking-tight text-foreground">
-						CapCut Simplicity. <br />
+						Seamless Simplicity. <br />
 						<span className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 bg-clip-text text-transparent">
 							Studio-Grade Output.
 						</span>

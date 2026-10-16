@@ -1,4 +1,4 @@
-export const SITE_URL = "https://opencut.app";
+export const SITE_URL = "https://ambercut.vercel.app";
 
 export const SITE_INFO = {
 	title: "AmberCut",
@@ -10,4 +10,4 @@ export const SITE_INFO = {
 	favicon: "/favicon.ico",
 };
 
-export const DEFAULT_LOGO_URL = "/logos/opencut/svg/logo.svg";
+export const DEFAULT_LOGO_URL = "/logos/ambercut/logo.svg";

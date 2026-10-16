@@ -27,11 +27,24 @@ function cleanupOldSessions() {
 	}
 }
 
-export const dynamic = "force-static";
+export const dynamic = process.env.TAURI_EXPORT === "true" ? "force-static" : "force-dynamic";
+
+const corsHeaders = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+	return new NextResponse(null, {
+		status: 204,
+		headers: corsHeaders,
+	});
+}
 
 export async function GET(req: NextRequest) {
 	if (process.env.TAURI_EXPORT === "true") {
-		return NextResponse.json({ status: "not_found" });
+		return NextResponse.json({ status: "not_found" }, { headers: corsHeaders });
 	}
 	cleanupOldSessions();
 	const { searchParams } = new URL(req.url);
@@ -39,7 +52,7 @@ export async function GET(req: NextRequest) {
 	const code = searchParams.get("code");
 
 	if (!sessionId && !code) {
-		return NextResponse.json({ error: "Session ID or code required" }, { status: 400 });
+		return NextResponse.json({ error: "Session ID or code required" }, { status: 400, headers: corsHeaders });
 	}
 
 	let matched: DesktopSession | undefined;
@@ -56,19 +69,19 @@ export async function GET(req: NextRequest) {
 	}
 
 	if (!matched) {
-		return NextResponse.json({ status: "not_found" }, { status: 404 });
+		return NextResponse.json({ status: "not_found" }, { status: 404, headers: corsHeaders });
 	}
 
 	return NextResponse.json({
 		status: matched.status,
 		user: matched.user,
 		code: matched.code,
-	});
+	}, { headers: corsHeaders });
 }
 
 export async function POST(req: NextRequest) {
 	if (process.env.TAURI_EXPORT === "true") {
-		return NextResponse.json({ error: "Not available in desktop" }, { status: 400 });
+		return NextResponse.json({ error: "Not available in desktop" }, { status: 400, headers: corsHeaders });
 	}
 	cleanupOldSessions();
 	try {
@@ -77,7 +90,7 @@ export async function POST(req: NextRequest) {
 
 		if (action === "create") {
 			if (!sessionId) {
-				return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
+				return NextResponse.json({ error: "Missing sessionId" }, { status: 400, headers: corsHeaders });
 			}
 
 			const newSession: DesktopSession = {
@@ -88,12 +101,12 @@ export async function POST(req: NextRequest) {
 			};
 
 			sessions.set(sessionId, newSession);
-			return NextResponse.json({ success: true, session: newSession });
+			return NextResponse.json({ success: true, session: newSession }, { headers: corsHeaders });
 		}
 
 		if (action === "complete") {
 			if (!sessionId && !code) {
-				return NextResponse.json({ error: "Missing sessionId or code" }, { status: 400 });
+				return NextResponse.json({ error: "Missing sessionId or code" }, { status: 400, headers: corsHeaders });
 			}
 
 			let target = sessionId ? sessions.get(sessionId) : undefined;
@@ -116,18 +129,18 @@ export async function POST(req: NextRequest) {
 					createdAt: Date.now(),
 				};
 				if (sessionId) sessions.set(sessionId, completedSession);
-				return NextResponse.json({ success: true, session: completedSession });
+				return NextResponse.json({ success: true, session: completedSession }, { headers: corsHeaders });
 			}
 
 			target.status = "completed";
 			target.user = user;
 			sessions.set(target.id, target);
 
-			return NextResponse.json({ success: true, session: target });
+			return NextResponse.json({ success: true, session: target }, { headers: corsHeaders });
 		}
 
-		return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+		return NextResponse.json({ error: "Invalid action" }, { status: 400, headers: corsHeaders });
 	} catch (err: any) {
-		return NextResponse.json({ error: err.message || "Failed to process" }, { status: 500 });
+		return NextResponse.json({ error: err.message || "Failed to process" }, { status: 500, headers: corsHeaders });
 	}
 }

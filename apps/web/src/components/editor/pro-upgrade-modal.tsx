@@ -30,6 +30,11 @@ import {
 import { toast } from "sonner";
 import { recordTelemetryEvent } from "@/stores/telemetry-store";
 import { saveRealTransaction } from "@/services/transactions";
+import {
+	detectUserCurrency,
+	persistUserCurrency,
+	type SupportedCurrency,
+} from "@/utils/currency";
 
 declare global {
 	interface Window {
@@ -46,12 +51,14 @@ interface PlanDefinition {
 	pricing: {
 		monthly: {
 			amountNgn: number;
+			amountUsd: number;
 			displayNgn: string;
 			displayUsd: string;
 			period: string;
 		};
 		annual: {
 			amountNgn: number;
+			amountUsd: number;
 			displayNgn: string;
 			displayUsd: string;
 			period: string;
@@ -70,12 +77,14 @@ const PLANS: PlanDefinition[] = [
 		pricing: {
 			monthly: {
 				amountNgn: 14500,
+				amountUsd: 11.99,
 				displayNgn: "₦14,500",
 				displayUsd: "$11.99",
 				period: "/month",
 			},
 			annual: {
 				amountNgn: 99000,
+				amountUsd: 79.99,
 				displayNgn: "₦99,000",
 				displayUsd: "$79.99",
 				period: "/year",
@@ -101,12 +110,14 @@ const PLANS: PlanDefinition[] = [
 		pricing: {
 			monthly: {
 				amountNgn: 29500,
+				amountUsd: 24.99,
 				displayNgn: "₦29,500",
 				displayUsd: "$24.99",
 				period: "/month",
 			},
 			annual: {
 				amountNgn: 198000,
+				amountUsd: 159.99,
 				displayNgn: "₦198,000",
 				displayUsd: "$159.99",
 				period: "/year",
@@ -130,6 +141,7 @@ export function ProUpgradeModal() {
 	const { isModalOpen, closeModal, isPro, plan, setProStatus, grantAdminAccess } = useProStore();
 	const { user, isAuthenticated } = useAuth();
 	const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
+	const [currency, setCurrency] = useState<SupportedCurrency>("USD");
 	const [customerEmail, setCustomerEmail] = useState("");
 	const [customerName, setCustomerName] = useState("");
 	const [selectedPlanId, setSelectedPlanId] = useState<"creator" | "director">("director");
@@ -137,6 +149,16 @@ export function ProUpgradeModal() {
 
 	const activeEmail = user?.email || customerEmail.trim();
 	const isAdmin = isUserAdmin(activeEmail);
+
+	// Detect if user is Nigerian or international (defaults to USD for non-Nigerians)
+	useEffect(() => {
+		setCurrency(detectUserCurrency());
+	}, []);
+
+	const handleCurrencyChange = (newCurr: SupportedCurrency) => {
+		setCurrency(newCurr);
+		persistUserCurrency(newCurr);
+	};
 
 	// Automatically recognize admin account and unlock all PRO capabilities for free
 	useEffect(() => {
@@ -185,27 +207,32 @@ export function ProUpgradeModal() {
 		}
 
 		const currentPricing = planDef.pricing[billingCycle];
+		const isUsd = currency === "USD";
+		const chargeAmount = isUsd ? currentPricing.amountUsd : currentPricing.amountNgn;
+		const chargeCurrency = isUsd ? "USD" : "NGN";
+		const paymentOptions = isUsd ? "card" : "card,banktransfer,ussd";
+
 		const publicKey =
 			process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY ||
 			"FLWPUBK-33162c3bb2bb347a6606f3e44645f1c9-X";
 
-		const txRef = `ambercut_${planDef.id}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+		const txRef = `ambercut_${planDef.id}_${chargeCurrency.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
 		toast.dismiss("checkout-loading");
 
 		window.FlutterwaveCheckout({
 			public_key: publicKey,
 			tx_ref: txRef,
-			amount: currentPricing.amountNgn,
-			currency: "NGN",
-			payment_options: "card,banktransfer,ussd",
+			amount: chargeAmount,
+			currency: chargeCurrency,
+			payment_options: paymentOptions,
 			customer: {
 				email: email,
 				name: name,
 			},
 			customizations: {
 				title: `AmberCut ${planDef.name}`,
-				description: `${planDef.name} Subscription (${billingCycle === "annual" ? "Annual" : "Monthly"})`,
+				description: `${planDef.name} Subscription (${billingCycle === "annual" ? "Annual" : "Monthly"} • ${chargeCurrency})`,
 				logo: "https://raw.githubusercontent.com/I-m-a-m-4/simple-video-editor/main/apps/web/public/logo.png",
 			},
 			callback: async (response: any) => {
@@ -245,7 +272,7 @@ export function ProUpgradeModal() {
 							customer: name || email.split("@")[0],
 							plan: billingCycle === "annual" ? "Annual Pro" : "Monthly Pro",
 							amountNgn: currentPricing.amountNgn,
-							amountUsd: billingCycle === "annual" ? (planDef.id === "director" ? 159.99 : 79.99) : (planDef.id === "director" ? 24.99 : 11.99),
+							amountUsd: currentPricing.amountUsd,
 							status: "successful",
 							date: new Date().toLocaleString(),
 							method: "Card",
@@ -280,7 +307,7 @@ export function ProUpgradeModal() {
 							customer: name || email.split("@")[0],
 							plan: billingCycle === "annual" ? "Annual Pro" : "Monthly Pro",
 							amountNgn: currentPricing.amountNgn,
-							amountUsd: billingCycle === "annual" ? (planDef.id === "director" ? 159.99 : 79.99) : (planDef.id === "director" ? 24.99 : 11.99),
+							amountUsd: currentPricing.amountUsd,
 							status: "successful",
 							date: new Date().toLocaleString(),
 							method: "Card",
@@ -292,7 +319,7 @@ export function ProUpgradeModal() {
 					recordTelemetryEvent(
 						"payment_completed",
 						`AmberCut ${planDef.name} Upgrade`,
-						`${billingCycle} plan - ${currentPricing.displayNgn}`,
+						`${billingCycle} plan - ${isUsd ? currentPricing.displayUsd : currentPricing.displayNgn}`,
 					);
 				}
 			},
@@ -327,39 +354,71 @@ export function ProUpgradeModal() {
 							</div>
 						</div>
 
-						{/* Billing Cycle Switcher */}
-						<div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border shrink-0 self-start sm:self-auto">
-							<button
-								type="button"
-								onClick={() => setBillingCycle("monthly")}
-								className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-									billingCycle === "monthly"
-										? "bg-orange-500 text-white shadow-xs"
-										: "text-muted-foreground hover:text-foreground"
-								}`}
-							>
-								Monthly
-							</button>
-							<button
-								type="button"
-								onClick={() => setBillingCycle("annual")}
-								className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-									billingCycle === "annual"
-										? "bg-orange-500 text-white shadow-xs"
-										: "text-muted-foreground hover:text-foreground"
-								}`}
-							>
-								<span>Annual</span>
-								<span
-									className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-										billingCycle === "annual"
-											? "bg-white/20 text-white"
-											: "bg-orange-500/15 text-orange-600 dark:text-orange-400"
+						<div className="flex flex-wrap items-center gap-2">
+							{/* Currency Switcher */}
+							<div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border shrink-0">
+								<button
+									type="button"
+									onClick={() => handleCurrencyChange("USD")}
+									className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+										currency === "USD"
+											? "bg-orange-500 text-white shadow-xs"
+											: "text-muted-foreground hover:text-foreground"
+									}`}
+									title="Display in US Dollars ($)"
+								>
+									<span>$</span>
+									<span>USD</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => handleCurrencyChange("NGN")}
+									className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+										currency === "NGN"
+											? "bg-orange-500 text-white shadow-xs"
+											: "text-muted-foreground hover:text-foreground"
+									}`}
+									title="Display in Nigerian Naira (₦)"
+								>
+									<span>₦</span>
+									<span>NGN</span>
+								</button>
+							</div>
+
+							{/* Billing Cycle Switcher */}
+							<div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border shrink-0 self-start sm:self-auto">
+								<button
+									type="button"
+									onClick={() => setBillingCycle("monthly")}
+									className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+										billingCycle === "monthly"
+											? "bg-orange-500 text-white shadow-xs"
+											: "text-muted-foreground hover:text-foreground"
 									}`}
 								>
-									Save ~44%
-								</span>
-							</button>
+									Monthly
+								</button>
+								<button
+									type="button"
+									onClick={() => setBillingCycle("annual")}
+									className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+										billingCycle === "annual"
+											? "bg-orange-500 text-white shadow-xs"
+											: "text-muted-foreground hover:text-foreground"
+									}`}
+								>
+									<span>Annual</span>
+									<span
+										className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+											billingCycle === "annual"
+												? "bg-white/20 text-white"
+												: "bg-orange-500/15 text-orange-600 dark:text-orange-400"
+										}`}
+									>
+										Save ~44%
+									</span>
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -415,6 +474,8 @@ export function ProUpgradeModal() {
 								{PLANS.map((p) => {
 									const pricing = p.pricing[billingCycle];
 									const isCurrentSelected = selectedPlanId === p.id;
+									const mainDisplayPrice = currency === "USD" ? pricing.displayUsd : pricing.displayNgn;
+									const secondaryDisplayPrice = currency === "USD" ? `(~${pricing.displayNgn})` : `(${pricing.displayUsd})`;
 
 									return (
 										<div
@@ -454,14 +515,14 @@ export function ProUpgradeModal() {
 												<div className="pt-2 border-t border-border/80">
 													<div className="flex items-baseline gap-1.5">
 														<span className="text-3xl font-extrabold tracking-tight text-foreground font-clash">
-															{pricing.displayNgn}
+															{mainDisplayPrice}
 														</span>
 														<span className="text-xs text-muted-foreground font-medium">
 															{pricing.period}
 														</span>
 													</div>
 													<div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
-														<span>{pricing.displayUsd}</span>
+														<span>{secondaryDisplayPrice}</span>
 														{"savings" in pricing && (
 															<span className="text-orange-500 font-bold">
 																• {pricing.savings}
@@ -493,7 +554,7 @@ export function ProUpgradeModal() {
 												</div>
 											</div>
 
-											{/* Pay Button - says 'Pay', not 'Pay with Flutterwave' */}
+											{/* Pay Button */}
 											<div className="pt-6 mt-4 border-t border-border/60">
 												<Button
 													onClick={(e) => {
@@ -511,7 +572,7 @@ export function ProUpgradeModal() {
 														"Connecting..."
 													) : (
 														<span>
-															Pay {pricing.displayNgn}
+															Pay {mainDisplayPrice}
 														</span>
 													)}
 												</Button>
@@ -550,7 +611,11 @@ export function ProUpgradeModal() {
 							)}
 
 							<div className="text-center text-[11px] text-muted-foreground pt-1">
-								<span>Cards, Bank Transfer, Apple Pay &amp; USSD supported • Cancel anytime</span>
+								<span>
+									{currency === "USD"
+										? "International Visa, Mastercard & Amex accepted in USD via Flutterwave • Cancel anytime"
+										: "Cards, Bank Transfer, Apple Pay & USSD supported in NGN via Flutterwave • Cancel anytime"}
+								</span>
 							</div>
 						</>
 					)}

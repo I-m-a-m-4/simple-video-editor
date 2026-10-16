@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth, type UserProfile } from "@/auth/auth-context";
 import { isDesktopApp, openInExternalBrowser, getAuthBaseUrl } from "@/utils/desktop";
-import { doc, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, deleteDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { toast } from "sonner";
 import {
@@ -100,9 +100,9 @@ export function DesktopGoogleAuthDialog({
 			console.warn("Firestore session init warning (will use API fallback):", err);
 		}
 
-		// 2. Register session in API route
+		// 2. Register session in API route at https://ambercut.vercel.app
 		try {
-			await fetch("/api/auth/desktop-session", {
+			await fetch(`${baseUrl}/api/auth/desktop-session`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -140,10 +140,10 @@ export function DesktopGoogleAuthDialog({
 			console.warn("Could not bind Firestore listener:", e);
 		}
 
-		// 5. Start Polling Fallback (every 1.5 seconds)
+		// 5. Start Polling Fallback (every 1.2 seconds against production API)
 		pollingRef.current = setInterval(async () => {
 			try {
-				const res = await fetch(`/api/auth/desktop-session?session=${newSessionId}`);
+				const res = await fetch(`${baseUrl}/api/auth/desktop-session?session=${newSessionId}`);
 				if (res.ok) {
 					const data = await res.json();
 					if (data?.status === "completed" && data?.user) {
@@ -151,7 +151,7 @@ export function DesktopGoogleAuthDialog({
 					}
 				}
 			} catch {}
-		}, 1500);
+		}, 1200);
 	};
 
 	const handleSuccessfulAuth = (user: UserProfile, sessId: string) => {
@@ -193,16 +193,37 @@ export function DesktopGoogleAuthDialog({
 		if (!cleanCode) return;
 
 		setIsVerifyingManual(true);
+		const baseUrl = getAuthBaseUrl();
+
+		// Check 1: Query Firestore directly by session code
 		try {
-			const res = await fetch(`/api/auth/desktop-session?code=${cleanCode}`);
-			if (res.ok) {
-				const data = await res.json();
-				if (data?.status === "completed" && data?.user) {
-					handleSuccessfulAuth(data.user, sessionId);
+			const q = query(
+				collection(db, "desktop_auth_sessions"),
+				where("code", "==", cleanCode),
+			);
+			const snap = await getDocs(q);
+			if (!snap.empty) {
+				const match = snap.docs[0].data();
+				if (match?.status === "completed" && match?.user) {
+					handleSuccessfulAuth(match.user, snap.docs[0].id);
 					return;
 				}
 			}
-			toast.error("Session not yet authorized in browser. Please complete Google sign-in in the open tab.");
+		} catch (fsErr) {
+			console.warn("Direct Firestore code verification warning:", fsErr);
+		}
+
+		// Check 2: Query production API endpoint
+		try {
+			const res = await fetch(`${baseUrl}/api/auth/desktop-session?code=${cleanCode}`);
+			if (res.ok) {
+				const data = await res.json();
+				if (data?.status === "completed" && data?.user) {
+					handleSuccessfulAuth(data.user, sessionId || cleanCode);
+					return;
+				}
+			}
+			toast.error("Session not yet authorized in browser. Please complete Google sign-in in your browser.");
 		} catch {
 			toast.error("Verification failed. Please ensure you finished sign-in in your browser.");
 		} finally {

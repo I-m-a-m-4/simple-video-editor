@@ -41,7 +41,7 @@ export function Hero() {
 						<Sparkles className="size-3.5 animate-pulse text-orange-500" />
 						<span>The Modern AI Video Editor</span>
 						<span className="hidden sm:inline-block h-3 w-px bg-orange-500/30" />
-						<span className="hidden sm:inline-block text-muted-foreground">Pro CapCut-Style Suite</span>
+						<span className="hidden sm:inline-block text-muted-foreground">Pro AmberCut Suite</span>
 					</div>
 				</motion.div>
 
@@ -55,7 +55,7 @@ export function Hero() {
 					<h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl font-clash text-foreground">
 						Create Viral Studio Videos with{" "}
 						<span className="bg-gradient-to-r from-orange-500 via-amber-400 to-yellow-500 bg-clip-text text-transparent drop-shadow-sm">
-							CapCut AI Power
+							AmberCut AI Power
 						</span>
 					</h1>
 					<p className="mx-auto mt-6 max-w-3xl text-base sm:text-xl text-muted-foreground font-light leading-relaxed">
@@ -206,7 +206,7 @@ export function Hero() {
 							<div className="flex items-center justify-between border-b border-border/60 pb-2">
 								<span className="text-xs font-bold font-clash text-foreground flex items-center gap-1.5">
 									<Sparkles className="size-3.5 text-orange-500" />
-									CapCut AI Inspector
+									AmberCut AI Inspector
 								</span>
 								<Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 text-[9px] uppercase font-bold">
 									ACTIVE

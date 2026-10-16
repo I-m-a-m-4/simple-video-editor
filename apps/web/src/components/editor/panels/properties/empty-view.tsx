@@ -1155,7 +1155,7 @@ export function EmptyView() {
 							<div className="rounded-lg bg-orange-500/5 border border-orange-500/20 p-3.5 text-center space-y-2">
 								<Crown className="size-5 text-orange-500 mx-auto" />
 								<div className="text-xs font-bold text-foreground font-dm">
-									Unlock CapCut PRO Features
+									Unlock AmberCut PRO Features
 								</div>
 								<p className="text-[11px] text-muted-foreground">
 									Export in 4K 60fps and enable AI voice clarity &amp; color grading.
