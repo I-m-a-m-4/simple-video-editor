@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
 import { auth, googleProvider, db } from "@/services/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { DEFAULT_LOGO_URL } from "@/site/brand";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Monitor, ShieldCheck, ArrowRight, Loader2, Sparkles, AlertCircle } from "lucide-react";
@@ -42,7 +42,7 @@ function DesktopAuthContent() {
 				image: user.photoURL || "",
 			};
 
-			// 1. Update Firestore session document
+			// 1. Update Firestore session document (by sessionId or code)
 			if (sessionId) {
 				try {
 					await setDoc(
@@ -58,6 +58,27 @@ function DesktopAuthContent() {
 					);
 				} catch (firestoreErr) {
 					console.warn("Firestore sync error (falling back to API):", firestoreErr);
+				}
+			} else if (code) {
+				try {
+					const q = query(
+						collection(db, "desktop_auth_sessions"),
+						where("code", "==", code),
+					);
+					const snap = await getDocs(q);
+					for (const docSnap of snap.docs) {
+						await setDoc(
+							docSnap.ref,
+							{
+								status: "completed",
+								user: profile,
+								completedAt: Date.now(),
+							},
+							{ merge: true },
+						);
+					}
+				} catch (fsErr) {
+					console.warn("Firestore sync by code error:", fsErr);
 				}
 			}
 
@@ -76,6 +97,11 @@ function DesktopAuthContent() {
 			} catch (apiErr) {
 				console.warn("API route session sync error:", apiErr);
 			}
+
+			// 3. Trigger deep link back to desktop app
+			try {
+				window.location.href = `ambercut://auth?session=${sessionId}&status=success`;
+			} catch {}
 
 			setIsSuccess(true);
 			toast.success("Desktop app authorized successfully!");

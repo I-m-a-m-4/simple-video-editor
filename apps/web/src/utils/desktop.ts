@@ -82,19 +82,33 @@ export async function openInExternalBrowser(url: string): Promise<boolean> {
 	return false;
 }
 
+export const PRODUCTION_SITE_URL = "https://ambercut.vercel.app";
+
 /**
- * Get public web app base URL suitable for external browser sign in
+ * Get public web app base URL suitable for external browser sign in.
+ * External browser OAuth flow must always point to the live hosted application
+ * (https://ambercut.vercel.app) where Firebase Google Auth is securely configured.
  */
 export function getAuthBaseUrl(): string {
+	// 1. If an explicit environment variable is set and is NOT localhost, use it
+	const envUrl = process.env.NEXT_PUBLIC_SITE_URL;
+	if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+		return envUrl.replace(/\/+$/, "");
+	}
+
+	// 2. If running inside a live browser on a production HTTPS domain (not localhost/tauri)
 	if (typeof window !== "undefined") {
 		const origin = window.location.origin;
-		// If running under Tauri's internal origin (e.g. tauri://localhost or http://tauri.localhost)
-		if (origin.startsWith("tauri:") || origin.includes("tauri.localhost")) {
-			return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-		}
-		if (origin.startsWith("http://") || origin.startsWith("https://")) {
-			return origin;
+		if (
+			origin.startsWith("https://") &&
+			!origin.includes("localhost") &&
+			!origin.includes("tauri")
+		) {
+			return origin.replace(/\/+$/, "");
 		}
 	}
-	return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
+	// 3. For desktop app (Tauri) and local dev, always direct external browser
+	// to the live production web app https://ambercut.vercel.app
+	return PRODUCTION_SITE_URL;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useProStore } from "@/stores/pro-store";
@@ -18,12 +18,27 @@ import {
 
 import { useAuth } from "@/auth/auth-context";
 import { useRouter } from "next/navigation";
+import {
+	detectUserCurrency,
+	persistUserCurrency,
+	type SupportedCurrency,
+} from "@/utils/currency";
 
 export function PricingSection() {
 	const [billingCycle, setBillingCycle] = useState<"annual" | "monthly">("annual");
+	const [currency, setCurrency] = useState<SupportedCurrency>("USD");
 	const { openModal } = useProStore();
 	const { isAuthenticated } = useAuth();
 	const router = useRouter();
+
+	useEffect(() => {
+		setCurrency(detectUserCurrency());
+	}, []);
+
+	const handleCurrencyChange = (newCurr: SupportedCurrency) => {
+		setCurrency(newCurr);
+		persistUserCurrency(newCurr);
+	};
 
 	const plans = [
 		{
@@ -58,7 +73,7 @@ export function PricingSection() {
 		},
 		{
 			id: "pro",
-			name: "CapCut Pro Suite",
+			name: "AmberCut Pro Suite",
 			tagline: "Full AI editing suite for creators, agencies, and pros",
 			priceNgn: billingCycle === "annual" ? "₦99,000" : "₦12,500",
 			priceUsd: billingCycle === "annual" ? "$79.99" : "$9.99",
@@ -112,8 +127,39 @@ export function PricingSection() {
 						Start editing for free in your browser. Upgrade anytime with Flutterwave to unlock 4K exports and studio AI enhancements.
 					</p>
 
-					{/* Billing Cycle Switcher */}
-					<div className="pt-2 flex items-center justify-center">
+					{/* Switchers (Billing Cycle & Currency) */}
+					<div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+						{/* Currency Switcher */}
+						<div className="flex items-center gap-1 rounded-xl bg-muted/80 p-1.5 border border-border shadow-xs">
+							<button
+								type="button"
+								onClick={() => handleCurrencyChange("USD")}
+								className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+									currency === "USD"
+										? "bg-orange-500 text-white shadow-xs"
+										: "text-muted-foreground hover:text-foreground"
+								}`}
+								title="Display in US Dollars ($)"
+							>
+								<span>$</span>
+								<span>USD</span>
+							</button>
+							<button
+								type="button"
+								onClick={() => handleCurrencyChange("NGN")}
+								className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+									currency === "NGN"
+										? "bg-orange-500 text-white shadow-xs"
+										: "text-muted-foreground hover:text-foreground"
+								}`}
+								title="Display in Nigerian Naira (₦)"
+							>
+								<span>₦</span>
+								<span>NGN</span>
+							</button>
+						</div>
+
+						{/* Billing Cycle Switcher */}
 						<div className="flex items-center gap-1.5 rounded-xl bg-muted/80 p-1.5 border border-border max-w-xs shadow-xs">
 							<button
 								type="button"
@@ -150,48 +196,59 @@ export function PricingSection() {
 
 				{/* Pricing Cards Grid */}
 				<div className="mt-14 grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto items-stretch">
-					{plans.map((plan) => (
-						<div
-							key={plan.id}
-							className={`relative rounded-2xl border p-7 sm:p-8 flex flex-col justify-between transition-all shadow-md ${
-								plan.highlight
-									? "border-orange-500 bg-gradient-to-b from-orange-500/5 via-card to-card ring-2 ring-orange-500/30 shadow-orange-500/5"
-									: "border-border bg-card hover:border-border/80"
-							}`}
-						>
-							{plan.badge && (
-								<div className="absolute -top-3.5 right-6">
-									<Badge className="bg-orange-500 text-white font-bold text-[10px] px-2.5 py-0.5 uppercase shadow-sm">
-										{plan.badge}
-									</Badge>
-								</div>
-							)}
+					{plans.map((plan) => {
+						const mainPrice = currency === "USD" ? plan.priceUsd : plan.priceNgn;
+						const secondaryPrice =
+							plan.id === "free"
+								? null
+								: currency === "USD"
+									? `(~${plan.priceNgn})`
+									: `(${plan.priceUsd})`;
 
-							<div>
-								<div className="flex items-center gap-2">
-									<h3 className="text-xl font-bold font-clash text-foreground">
-										{plan.name}
-									</h3>
-									{plan.highlight && (
-										<Crown className="size-4 text-orange-500 fill-orange-500" />
-									)}
-								</div>
-								<p className="mt-1 text-xs text-muted-foreground font-light leading-relaxed">
-									{plan.tagline}
-								</p>
+						return (
+							<div
+								key={plan.id}
+								className={`relative rounded-2xl border p-7 sm:p-8 flex flex-col justify-between transition-all shadow-md ${
+									plan.highlight
+										? "border-orange-500 bg-gradient-to-b from-orange-500/5 via-card to-card ring-2 ring-orange-500/30 shadow-orange-500/5"
+										: "border-border bg-card hover:border-border/80"
+								}`}
+							>
+								{plan.badge && (
+									<div className="absolute -top-3.5 right-6">
+										<Badge className="bg-orange-500 text-white font-bold text-[10px] px-2.5 py-0.5 uppercase shadow-sm">
+											{plan.badge}
+										</Badge>
+									</div>
+								)}
 
-								{/* Price */}
-								<div className="mt-6 flex items-baseline gap-2">
-									<span className="text-4xl font-extrabold font-clash text-foreground">
-										{plan.priceNgn}
-									</span>
-									<span className="text-xs text-muted-foreground font-medium">
-										{plan.period}
-									</span>
-									<span className="text-xs text-muted-foreground font-mono">
-										({plan.priceUsd})
-									</span>
-								</div>
+								<div>
+									<div className="flex items-center gap-2">
+										<h3 className="text-xl font-bold font-clash text-foreground">
+											{plan.name}
+										</h3>
+										{plan.highlight && (
+											<Crown className="size-4 text-orange-500 fill-orange-500" />
+										)}
+									</div>
+									<p className="mt-1 text-xs text-muted-foreground font-light leading-relaxed">
+										{plan.tagline}
+									</p>
+
+									{/* Price */}
+									<div className="mt-6 flex items-baseline gap-2">
+										<span className="text-4xl font-extrabold font-clash text-foreground">
+											{mainPrice}
+										</span>
+										<span className="text-xs text-muted-foreground font-medium">
+											{plan.period}
+										</span>
+										{secondaryPrice && (
+											<span className="text-xs text-muted-foreground font-mono">
+												{secondaryPrice}
+											</span>
+										)}
+									</div>
 
 								{/* Action CTA Button */}
 								<Button
@@ -249,7 +306,8 @@ export function PricingSection() {
 								</div>
 							)}
 						</div>
-					))}
+					);
+				})}
 				</div>
 
 				{/* Payment Trust Footer */}

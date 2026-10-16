@@ -70,10 +70,10 @@ export default function TermsPage() {
 						<p className="mt-4">
 							Questions? Email us at{" "}
 							<a
-								href="mailto:oss@opencut.app"
+								href="mailto:support@ambercut.vercel.app"
 								className="text-primary hover:underline"
 							>
-								oss@opencut.app
+								support@ambercut.vercel.app
 							</a>
 						</p>
 					</AccordionContent>
@@ -214,10 +214,10 @@ export default function TermsPage() {
 					</a>
 					, email us at{" "}
 					<a
-						href="mailto:oss@opencut.app"
+						href="mailto:support@ambercut.vercel.app"
 						className="text-primary hover:underline"
 					>
-						oss@opencut.app
+						support@ambercut.vercel.app
 					</a>
 					, or reach out on{" "}
 					<a

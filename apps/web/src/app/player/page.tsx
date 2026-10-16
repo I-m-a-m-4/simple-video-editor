@@ -24,6 +24,7 @@ import {
 	FileVideo,
 	Info,
 	Sparkles,
+	Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { processMediaAssets } from "@/media/processing";
@@ -56,6 +57,9 @@ function VideoPlayerContent() {
 	const [duration, setDuration] = useState(0);
 	const [volume, setVolume] = useState(1);
 	const [isMuted, setIsMuted] = useState(false);
+	const [audioBoost, setAudioBoost] = useState(1.0); // 1.0 (100%) to 3.0 (300%)
+	const [vocalClarity, setVocalClarity] = useState(false);
+	const [audioBoosterOpen, setAudioBoosterOpen] = useState(false);
 	const [playbackRate, setPlaybackRate] = useState(1);
 	const [isLooping, setIsLooping] = useState(false);
 	const [isFullscreen, setIsFullscreen] = useState(false);
@@ -67,6 +71,13 @@ function VideoPlayerContent() {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// Web Audio Booster Refs
+	const audioContextRef = useRef<AudioContext | null>(null);
+	const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+	const boostGainNodeRef = useRef<GainNode | null>(null);
+	const compressorNodeRef = useRef<DynamicsCompressorNode | null>(null);
+	const clarityFilterRef = useRef<BiquadFilterNode | null>(null);
 
 	// Load video from File
 	const loadVideoFile = useCallback((file: File) => {
@@ -140,9 +151,105 @@ function VideoPlayerContent() {
 		}
 	};
 
+	// Web Audio Booster Setup
+	const initAudioBooster = useCallback(() => {
+		if (!videoRef.current || audioContextRef.current) return;
+		try {
+			const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+			if (!AudioContextClass) return;
+
+			const ctx = new AudioContextClass();
+			const source = ctx.createMediaElementSource(videoRef.current);
+
+			// Equalizer / Speech Clarity Filter (centered at 3.2kHz for vocal intelligibility)
+			const clarity = ctx.createBiquadFilter();
+			clarity.type = "peaking";
+			clarity.frequency.value = 3200;
+			clarity.Q.value = 1.2;
+			clarity.gain.value = vocalClarity ? 5.0 : 0.0;
+
+			// Gain Booster node (1.0 = 100%, 2.0 = 200%, 3.0 = 300%)
+			const boostGain = ctx.createGain();
+			boostGain.gain.value = audioBoost;
+
+			// Dynamics Compressor / Limiter prevents distortion/clipping
+			const compressor = ctx.createDynamicsCompressor();
+			compressor.threshold.value = -12;
+			compressor.knee.value = 6;
+			compressor.ratio.value = 16;
+			compressor.attack.value = 0.003;
+			compressor.release.value = 0.15;
+
+			source.connect(clarity);
+			clarity.connect(boostGain);
+			boostGain.connect(compressor);
+			compressor.connect(ctx.destination);
+
+			audioContextRef.current = ctx;
+			sourceNodeRef.current = source;
+			boostGainNodeRef.current = boostGain;
+			clarityFilterRef.current = clarity;
+			compressorNodeRef.current = compressor;
+		} catch (e) {
+			console.warn("Audio Booster initialization notice:", e);
+		}
+	}, [audioBoost, vocalClarity]);
+
+	const setAudioBoostLevel = (level: number) => {
+		const clamped = Math.max(1, Math.min(3, Math.round(level * 10) / 10));
+		setAudioBoost(clamped);
+		initAudioBooster();
+		if (audioContextRef.current?.state === "suspended") {
+			audioContextRef.current.resume().catch(() => {});
+		}
+		if (boostGainNodeRef.current && audioContextRef.current) {
+			boostGainNodeRef.current.gain.setTargetAtTime(
+				clamped,
+				audioContextRef.current.currentTime,
+				0.02,
+			);
+		}
+		toast.success(
+			`Audio Booster: ${Math.round(clamped * 100)}% (${clamped > 1 ? `+${((clamped - 1) * 6).toFixed(1)}dB` : "Standard"})`,
+			{ id: "player-boost-toast" },
+		);
+	};
+
+	const toggleVocalClarity = () => {
+		const next = !vocalClarity;
+		setVocalClarity(next);
+		initAudioBooster();
+		if (clarityFilterRef.current && audioContextRef.current) {
+			clarityFilterRef.current.gain.setTargetAtTime(
+				next ? 5.0 : 0.0,
+				audioContextRef.current.currentTime,
+				0.02,
+			);
+		}
+		toast.info(
+			next
+				? "Speech & Vocal Clarity Booster Activated (+5dB @ 3.2kHz)"
+				: "Speech Clarity Filter Turned Off",
+			{ id: "vocal-clarity-toast" },
+		);
+	};
+
+	// Clean up AudioContext on unmount
+	useEffect(() => {
+		return () => {
+			if (audioContextRef.current) {
+				audioContextRef.current.close().catch(() => {});
+			}
+		};
+	}, []);
+
 	// Toggle play/pause
 	const togglePlay = () => {
 		if (!videoRef.current) return;
+		initAudioBooster();
+		if (audioContextRef.current?.state === "suspended") {
+			audioContextRef.current.resume().catch(() => {});
+		}
 		if (videoRef.current.paused) {
 			videoRef.current.play();
 			setIsPlaying(true);
@@ -162,6 +269,10 @@ function VideoPlayerContent() {
 	// Volume
 	const handleVolumeChange = (newVol: number) => {
 		if (!videoRef.current) return;
+		initAudioBooster();
+		if (audioContextRef.current?.state === "suspended") {
+			audioContextRef.current.resume().catch(() => {});
+		}
 		videoRef.current.volume = newVol;
 		setVolume(newVol);
 		if (newVol > 0 && isMuted) {
@@ -500,6 +611,138 @@ function VideoPlayerContent() {
 										onValueChange={([val]) => handleVolumeChange(val)}
 									/>
 								</div>
+							</div>
+
+							{/* Audio Booster Trigger Button & Flyout */}
+							<div className="relative">
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={(e) => {
+										e.stopPropagation();
+										initAudioBooster();
+										setAudioBoosterOpen((prev) => !prev);
+									}}
+									className={`h-8 px-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+										audioBoost > 1 || vocalClarity
+											? "bg-orange-500/25 text-orange-400 border border-orange-500/40 hover:bg-orange-500/35 shadow-xs"
+											: "text-white/80 hover:text-white hover:bg-white/15"
+									}`}
+									title="Audio Booster (Boost up to 300%)"
+								>
+									<Zap className={`size-3.5 ${audioBoost > 1 ? "text-orange-400 fill-orange-400" : ""}`} />
+									<span className="font-mono text-[11px] font-bold">
+										{audioBoost > 1 ? `${Math.round(audioBoost * 100)}%` : "Booster"}
+									</span>
+									{audioBoost > 1 && (
+										<span className="size-1.5 rounded-full bg-orange-400 animate-pulse hidden sm:inline-block" />
+									)}
+								</Button>
+
+								{/* Audio Booster Flyout */}
+								{audioBoosterOpen && (
+									<div
+										className="absolute bottom-11 left-0 z-50 w-72 p-4 rounded-2xl bg-zinc-950/95 border border-white/20 backdrop-blur-xl text-white shadow-2xl space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150 select-none"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<div className="flex items-center justify-between border-b border-white/10 pb-2">
+											<div className="flex items-center gap-1.5">
+												<Zap className="size-4 text-orange-400 fill-orange-400" />
+												<span className="text-xs font-bold font-clash">Hardware Audio Booster</span>
+											</div>
+											<Badge
+												className={`text-[10px] font-bold ${
+													audioBoost > 1
+														? "bg-orange-500 text-white"
+														: "bg-white/10 text-white/60"
+												}`}
+											>
+												{Math.round(audioBoost * 100)}%
+											</Badge>
+										</div>
+
+										{/* Boost Presets */}
+										<div className="space-y-1.5">
+											<div className="flex items-center justify-between text-[11px] text-white/70">
+												<span>Volume Amplification</span>
+												<span className="font-mono text-orange-400 font-bold">
+													{audioBoost === 1
+														? "1.0x (Standard)"
+														: `${audioBoost.toFixed(1)}x (+${((audioBoost - 1) * 6).toFixed(1)}dB)`}
+												</span>
+											</div>
+											<div className="grid grid-cols-4 gap-1.5">
+												{[
+													{ label: "100%", val: 1.0 },
+													{ label: "150%", val: 1.5 },
+													{ label: "200%", val: 2.0 },
+													{ label: "300%", val: 3.0 },
+												].map((preset) => (
+													<button
+														key={preset.val}
+														type="button"
+														onClick={() => setAudioBoostLevel(preset.val)}
+														className={`h-7 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+															audioBoost === preset.val
+																? "bg-orange-500 text-white shadow-xs"
+																: "bg-white/10 hover:bg-white/20 text-white/80"
+														}`}
+													>
+														{preset.label}
+													</button>
+												))}
+											</div>
+										</div>
+
+										{/* Boost Slider */}
+										<div className="space-y-1">
+											<input
+												type="range"
+												min={1}
+												max={3}
+												step={0.1}
+												value={audioBoost}
+												onChange={(e) => setAudioBoostLevel(parseFloat(e.target.value))}
+												className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-orange-500"
+											/>
+											<div className="flex justify-between text-[10px] text-white/40 font-mono">
+												<span>100%</span>
+												<span>200%</span>
+												<span>300% (Max)</span>
+											</div>
+										</div>
+
+										{/* Vocal Clarity & Speech Enhancer Toggle */}
+										<div className="flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-white/10">
+											<div className="space-y-0.5">
+												<div className="text-xs font-semibold text-white flex items-center gap-1.5">
+													<Sparkles className="size-3 text-cyan-400" />
+													<span>Speech Clarity Booster</span>
+												</div>
+												<div className="text-[10px] text-white/60">
+													Lifts dialogue &amp; speech presence
+												</div>
+											</div>
+											<button
+												type="button"
+												onClick={toggleVocalClarity}
+												className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer ${
+													vocalClarity ? "bg-orange-500" : "bg-white/20"
+												}`}
+											>
+												<div
+													className={`size-3.5 rounded-full bg-white transition-transform transform ${
+														vocalClarity ? "translate-x-4.5" : "translate-x-1"
+													}`}
+												/>
+											</button>
+										</div>
+
+										<div className="text-[10px] text-white/40 text-center flex items-center justify-center gap-1">
+											<span>Dynamic studio limiter active to prevent audio clipping</span>
+										</div>
+									</div>
+								)}
 							</div>
 
 							{/* Timestamp */}

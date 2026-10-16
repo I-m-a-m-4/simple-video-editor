@@ -115,7 +115,7 @@ function SignupForm() {
 					Create Your Account
 				</h1>
 				<p className="text-xs text-muted-foreground">
-					Sign up to start creating projects with CapCut-style AI tools
+					Sign up to start creating projects with AmberCut AI tools
 				</p>
 			</div>
 

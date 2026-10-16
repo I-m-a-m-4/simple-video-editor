@@ -79,7 +79,7 @@ export class PlaybackManager {
 	}
 
 	setVolume({ volume }: { volume: number }): void {
-		const clampedVolume = Math.max(0, Math.min(1, volume));
+		const clampedVolume = Math.max(0, Math.min(3, volume));
 		this.volume = clampedVolume;
 		this.muted = clampedVolume === 0;
 		if (clampedVolume > 0) {
