@@ -22,6 +22,7 @@ export interface Transaction {
 	status: "successful" | "pending" | "failed";
 	date: string;
 	method: "Card" | "Bank Transfer" | "USSD" | "Admin Granted" | "Complimentary";
+	channel?: string;
 }
 
 const STORAGE_KEY = "opencut_real_transactions_v1";
@@ -67,6 +68,7 @@ export async function getRealTransactions(): Promise<Transaction[]> {
 					status: data.status || "successful",
 					date: data.date || new Date().toLocaleString(),
 					method: data.method || "Card",
+					channel: data.channel || (data.method?.includes("Store") ? "Microsoft Store" : undefined),
 				});
 			}
 		}
@@ -87,63 +89,6 @@ export async function getRealTransactions(): Promise<Transaction[]> {
 		}
 	} catch (e) {
 		// Firestore transactions might be offline
-	}
-
-	// Baseline verified transactions if empty
-	if (localTxMap.size === 0) {
-		const baselineTxs: Transaction[] = [
-			{
-				id: "flw_tx_8892147",
-				tx_ref: "amb_ms_8892147_dir",
-				email: "belloimam431@gmail.com",
-				customer: "Bello Imam",
-				plan: "Annual Pro",
-				amountNgn: 198000,
-				amountUsd: 158.4,
-				status: "successful",
-				date: "2026-10-24 16:22:10",
-				method: "Card",
-			},
-			{
-				id: "flw_tx_8849120",
-				tx_ref: "amb_ms_8849120",
-				email: "tariq.edwards@creativestudios.co",
-				customer: "Tariq Edwards",
-				plan: "Annual Pro",
-				amountNgn: 198000,
-				amountUsd: 158.4,
-				status: "successful",
-				date: "2026-10-22 11:45:00",
-				method: "Bank Transfer",
-			},
-			{
-				id: "flw_tx_8790311",
-				tx_ref: "amb_ms_8790311",
-				email: "aisha.content@gmail.com",
-				customer: "Aisha Mohammed",
-				plan: "Monthly Pro",
-				amountNgn: 14500,
-				amountUsd: 11.6,
-				status: "successful",
-				date: "2026-10-25 09:12:30",
-				method: "Card",
-			},
-			{
-				id: "flw_tx_8731102",
-				tx_ref: "amb_ms_8731102",
-				email: "miller.vids@outlook.com",
-				customer: "David Miller",
-				plan: "Monthly Pro",
-				amountNgn: 14500,
-				amountUsd: 11.6,
-				status: "successful",
-				date: "2026-10-26 12:05:44",
-				method: "USSD",
-			},
-		];
-		for (const t of baselineTxs) {
-			localTxMap.set(t.id, t);
-		}
 	}
 
 	return Array.from(localTxMap.values()).sort(
