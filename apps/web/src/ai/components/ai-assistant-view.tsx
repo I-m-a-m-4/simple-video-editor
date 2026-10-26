@@ -37,11 +37,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const MODEL_LABELS: Record<string, string> = {
-	"openai/gpt-oss-120b": "Amber 120B High-Intelligence (Default)",
-	"qwen/qwen3.8-27b": "Amber 27B Fast",
-	"openai/gpt-oss-20b": "Amber 20B Instant",
-	"llama-3.3-70b-versatile": "Amber 70B Versatile",
-	"llama-3.1-8b-instant": "Amber 8B Instant",
+	"llama-3.1-8b-instant": "Amber 8B Instant (Default - Fast & High Quota)",
+	"llama-3.3-70b-versatile": "Amber 70B Versatile (Deep Reasoning)",
 };
 
 const QUICK_ACTIONS = [

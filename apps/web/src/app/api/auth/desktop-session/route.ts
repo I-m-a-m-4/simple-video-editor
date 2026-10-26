@@ -27,7 +27,7 @@ function cleanupOldSessions() {
 	}
 }
 
-export const dynamic = process.env.TAURI_EXPORT === "true" ? "force-static" : "force-dynamic";
+export const dynamic = "force-static";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",

@@ -161,7 +161,7 @@ export const useAiStore = create<AiState>()(
 			migrate: (persistedState: unknown) => {
 				const state = persistedState as Partial<AiState>;
 				if (state) {
-					if (state.model === "llama-3.3-70b-versatile" || !state.model) {
+					if (!state.model || state.model.startsWith("openai/") || state.model.startsWith("qwen/")) {
 						state.model = DEFAULT_GROQ_MODEL;
 					}
 					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {
@@ -172,7 +172,7 @@ export const useAiStore = create<AiState>()(
 			},
 			onRehydrateStorage: () => (state) => {
 				if (state) {
-					if (state.model === "llama-3.3-70b-versatile" || !state.model) {
+					if (!state.model || state.model.startsWith("openai/") || state.model.startsWith("qwen/")) {
 						state.setModel(DEFAULT_GROQ_MODEL);
 					}
 					if (!state.systemInstructions || /opencut/i.test(state.systemInstructions)) {

@@ -421,6 +421,76 @@ export const aiTools: AiToolDefinition[] = [
 		},
 	},
 	{
+		name: "add_title_card",
+		description:
+			"Add a styled title card or headline card to the timeline with text and background color.",
+		parameters: {
+			type: "object",
+			properties: {
+				text: { type: "string", description: "Title card text content" },
+				color: { type: "string", description: "Background card color (e.g. blue, red, #1e40af)" },
+				textColor: { type: "string", description: "Text color (default #ffffff)" },
+				fontSize: { type: "number", description: "Font size (default 40)" },
+				durationSec: { type: "number", description: "Duration in seconds (default 5)" },
+				startTimeSec: { type: "number", description: "Start time in seconds (default: playhead)" },
+			},
+			required: ["text"],
+		},
+		execute: (args) => {
+			const editor = getEditor();
+			const text = requireString(args, "text");
+			const rawColor = optionalString(args, "color") || "blue";
+			const colorMap: Record<string, string> = {
+				blue: "#1E40AF",
+				lightblue: "#38BDF8",
+				navy: "#0F172A",
+				red: "#DC2626",
+				green: "#16A34A",
+				yellow: "#CA8A04",
+				purple: "#7C3AED",
+				pink: "#DB2777",
+				orange: "#EA580C",
+				black: "#111827",
+				dark: "#1F2937",
+				white: "#FFFFFF",
+			};
+			const bgColor = colorMap[rawColor.toLowerCase()] || (rawColor.startsWith("#") ? rawColor : "#1E40AF");
+			const textColor = optionalString(args, "textColor") || "#FFFFFF";
+			const fontSize = optionalNumber(args, "fontSize") || 40;
+			const durationSec = optionalNumber(args, "durationSec") || 5;
+			const startTimeSec =
+				optionalNumber(args, "startTimeSec") ??
+				toSeconds(editor.playback.getCurrentTime());
+
+			const element = buildTextElement({
+				raw: {
+					name: `${text} (Title Card)`,
+					duration: fromSeconds(durationSec),
+					params: {
+						content: text,
+						fontSize,
+						fontWeight: "bold",
+						color: textColor,
+						textAlign: "center",
+						"background.enabled": true,
+						"background.color": bgColor,
+						"background.cornerRadius": 8,
+						"background.paddingX": 36,
+						"background.paddingY": 24,
+					} as any,
+				},
+				startTime: fromSeconds(startTimeSec),
+			});
+
+			editor.timeline.insertElement({
+				element,
+				placement: { mode: "auto" },
+			});
+
+			return { ok: true, text, bgColor, durationSec, startTimeSec };
+		},
+	},
+	{
 		name: "add_audio_from_url",
 		description:
 			"Add a library audio element (e.g. a music track URL) to the timeline.",

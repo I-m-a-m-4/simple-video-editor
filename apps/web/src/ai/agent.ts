@@ -3,10 +3,12 @@ import {
 	type AiToolExecution,
 	type GroqChatMessage,
 	type GroqChatResponse,
+	DEFAULT_GROQ_MODEL,
 	GROQ_API_URL,
 } from "./types";
 import { executeAiTool, toGroqTools } from "./tools";
 import { useAiStore, DEFAULT_GROQ_KEY } from "./store";
+import { tryExecuteLocalIntent } from "./local-intent";
 
 function generateId(): string {
 	return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -29,8 +31,8 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 	const trimmedPrompt = prompt.trim();
 	if (!trimmedPrompt) return;
 
-	if (store.model === "llama-3.3-70b-versatile") {
-		store.setModel("openai/gpt-oss-120b");
+	if (store.model.startsWith("openai/") || store.model.startsWith("qwen/")) {
+		store.setModel(DEFAULT_GROQ_MODEL);
 	}
 
 	const effectiveApiKey = store.apiKey || DEFAULT_GROQ_KEY;
@@ -46,6 +48,20 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 		role: "user",
 		content: trimmedPrompt,
 	});
+
+	// Fast-path: Check if command matches direct local video editing intent (e.g. "Add a blue title card saying Hello")
+	const localResult = tryExecuteLocalIntent(trimmedPrompt);
+	if (localResult.handled) {
+		const toolCalls = localResult.toolCall ? [localResult.toolCall] : [];
+		store.addMessage({
+			id: assistantMsgId,
+			role: "assistant",
+			content: localResult.response || "Done.",
+			pending: false,
+			toolCalls,
+		});
+		return;
+	}
 
 	store.addMessage({
 		id: assistantMsgId,
@@ -208,10 +224,32 @@ export async function sendAiPrompt(prompt: string): Promise<void> {
 				toolCalls: collectedToolCalls,
 			});
 		} else {
-			const errMessage =
-				err instanceof Error ? err.message : "An unexpected error occurred.";
+			// Fallback: If remote API failed due to rate limits or offline network, try local intent execution
+			const fallbackResult = tryExecuteLocalIntent(trimmedPrompt);
+			if (fallbackResult.handled) {
+				if (fallbackResult.toolCall) {
+					collectedToolCalls.push(fallbackResult.toolCall);
+				}
+				store.updateMessage(assistantMsgId, {
+					content: fallbackResult.response || "Done.",
+					pending: false,
+					toolCalls: collectedToolCalls,
+				});
+				return;
+			}
+
+			const rawErr = err instanceof Error ? err.message : String(err);
+			const isRateLimit =
+				/rate\s*limit|tokens\s*per\s*minute|tpm|429|quota|retry|interval/i.test(rawErr);
+
+			const friendlyMessage = isRateLimit
+				? "Amber AI Assistant is experiencing high traffic. Your command can be performed directly using the editor tools, or you can configure a dedicated API key in Settings."
+				: rawErr
+						.replace(/OpenCut/gi, "AmberCut")
+						.replace(/Open\s*Court/gi, "AmberCut");
+
 			store.updateMessage(assistantMsgId, {
-				content: `⚠️ **Error**: ${errMessage}`,
+				content: `⚠️ ${friendlyMessage}`,
 				pending: false,
 				toolCalls: collectedToolCalls,
 			});

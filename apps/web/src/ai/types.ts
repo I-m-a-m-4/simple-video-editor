@@ -1,11 +1,8 @@
 export const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const GROQ_MODELS = [
-	"openai/gpt-oss-120b",
-	"openai/gpt-oss-20b",
-	"qwen/qwen3.8-27b",
-	"llama-3.3-70b-versatile",
 	"llama-3.1-8b-instant",
+	"llama-3.3-70b-versatile",
 ] as const;
 
 export const DEFAULT_GROQ_MODEL: string = GROQ_MODELS[0];
