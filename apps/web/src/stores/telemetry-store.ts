@@ -42,58 +42,22 @@ export interface TelemetrySummary {
 const STORAGE_KEY = "opencut_telemetry_data_v1";
 
 export const INITIAL_BASE: TelemetrySummary = {
-	smartSuggestionsCount: 8950,
-	colorBetterCount: 3120,
-	colorConsistentCount: 2840,
-	volumeConsistentCount: 4210,
-	voiceClearerCount: 3890,
-	videoHdCount: 5610,
-	faceRetouchCount: 1420,
-	exportCount: 14280,
-	audioTracksCount: 19800,
-	transactionsCount: 42,
-	totalMicrosoftStoreDownloads: 4860,
-	activeDesktopInstalls: 3140,
-	webAppUsers: 1720,
-	storeRating: 4.9,
-	crashFreeRate: 99.8,
-	events: [
-		{
-			id: "evt-ms-1",
-			type: "ms_store_launch",
-			name: "Windows Desktop Launch",
-			timestamp: "2 mins ago",
-			details: "Microsoft Store MSIX (x64) • Windows 11 Build 26100",
-		},
-		{
-			id: "evt-ms-2",
-			type: "export",
-			name: "4K 60FPS Video Export",
-			timestamp: "7 mins ago",
-			details: "WebCodecs MP4 H.264 Hardware Encoder • 3840x2160",
-		},
-		{
-			id: "evt-ms-3",
-			type: "smart_suggestions",
-			name: "Amber AI Viral Shorts Cut",
-			timestamp: "12 mins ago",
-			details: "AI Speech Segmentation & 9:16 Auto-Crop",
-		},
-		{
-			id: "evt-ms-4",
-			type: "voice_clearer",
-			name: "Studio Voice Equalizer",
-			timestamp: "18 mins ago",
-			details: "SoundTouch WebAudio DSP Filter Applied",
-		},
-		{
-			id: "evt-ms-5",
-			type: "ms_store_launch",
-			name: "Microsoft Store New Install",
-			timestamp: "24 mins ago",
-			details: "Microsoft Store Installer Package • London, UK",
-		},
-	],
+	smartSuggestionsCount: 0,
+	colorBetterCount: 0,
+	colorConsistentCount: 0,
+	volumeConsistentCount: 0,
+	voiceClearerCount: 0,
+	videoHdCount: 0,
+	faceRetouchCount: 0,
+	exportCount: 0,
+	audioTracksCount: 0,
+	transactionsCount: 0,
+	totalMicrosoftStoreDownloads: 0,
+	activeDesktopInstalls: 0,
+	webAppUsers: 0,
+	storeRating: 5.0,
+	crashFreeRate: 100,
+	events: [],
 };
 
 export function getTelemetryData(): TelemetrySummary {
@@ -109,12 +73,12 @@ export function getTelemetryData(): TelemetrySummary {
 		return {
 			...INITIAL_BASE,
 			...parsed,
-			totalMicrosoftStoreDownloads: parsed.totalMicrosoftStoreDownloads || INITIAL_BASE.totalMicrosoftStoreDownloads,
-			activeDesktopInstalls: parsed.activeDesktopInstalls || INITIAL_BASE.activeDesktopInstalls,
-			webAppUsers: parsed.webAppUsers || INITIAL_BASE.webAppUsers,
-			storeRating: parsed.storeRating || INITIAL_BASE.storeRating,
-			crashFreeRate: parsed.crashFreeRate || INITIAL_BASE.crashFreeRate,
-			events: parsed.events && parsed.events.length > 0 ? parsed.events : INITIAL_BASE.events,
+			totalMicrosoftStoreDownloads: Number(parsed.totalMicrosoftStoreDownloads) || 0,
+			activeDesktopInstalls: Number(parsed.activeDesktopInstalls) || 0,
+			webAppUsers: Number(parsed.webAppUsers) || 0,
+			storeRating: Number(parsed.storeRating) || 5.0,
+			crashFreeRate: Number(parsed.crashFreeRate) || 100,
+			events: Array.isArray(parsed.events) ? parsed.events : [],
 		};
 	} catch (e) {
 		return INITIAL_BASE;
