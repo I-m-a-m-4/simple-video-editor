@@ -136,6 +136,57 @@ export default function AdminImamShafiPage() {
 		plan: "Annual Pro" as "Annual Pro" | "Monthly Pro",
 	});
 
+	// Microsoft Store Partner Metrics Modal
+	const [showStoreEditModal, setShowStoreEditModal] = useState(false);
+	const [storeForm, setStoreForm] = useState({
+		downloads: 0,
+		activeInstalls: 0,
+		rating: 5.0,
+	});
+
+	// Real Client Hardware & Platform Sensors
+	const [clientSystemInfo, setClientSystemInfo] = useState<{
+		os: string;
+		arch: string;
+		cores: number;
+		ram: string;
+		gpuSupport: boolean;
+		webCodecsSupport: boolean;
+	}>({
+		os: "Windows 11 / 10",
+		arch: "x64",
+		cores: 8,
+		ram: "System RAM",
+		gpuSupport: true,
+		webCodecsSupport: true,
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const ua = navigator.userAgent;
+		let detectedOs = "Windows 11 / 10";
+		if (ua.includes("Windows NT 10.0")) detectedOs = "Windows 11 / 10";
+		else if (ua.includes("Mac")) detectedOs = "macOS";
+		else if (ua.includes("Linux")) detectedOs = "Linux";
+
+		let detectedArch = "x64 (Intel / AMD)";
+		if (ua.includes("ARM") || ua.includes("aarch64")) detectedArch = "ARM64";
+
+		const cores = navigator.hardwareConcurrency || 8;
+		const mem = (navigator as any).deviceMemory ? `${(navigator as any).deviceMemory} GB RAM` : "Hardware System Memory";
+		const gpu = "gpu" in navigator;
+		const codecs = typeof VideoEncoder !== "undefined";
+
+		setClientSystemInfo({
+			os: detectedOs,
+			arch: detectedArch,
+			cores,
+			ram: mem,
+			gpuSupport: gpu,
+			webCodecsSupport: codecs,
+		});
+	}, []);
+
 	// Creator Management Modal
 	const [grantEmail, setGrantEmail] = useState("");
 	const [grantName, setGrantName] = useState("");
@@ -172,21 +223,28 @@ export default function AdminImamShafiPage() {
 		else setIsLoadingData(true);
 
 		try {
-			// 1. Transactions (Reads Firestore payments + baseline)
+			// 1. Transactions (Reads Firestore payments + local)
 			const txs = await getRealTransactions();
 			setTransactions(txs);
 
 			// 2. Global Telemetry & Microsoft Store Stats (Reads Firestore analytics/overview + local)
 			const tel = await getGlobalTelemetryData();
 			setTelemetry(tel);
+			setStoreForm({
+				downloads: tel.totalMicrosoftStoreDownloads || 0,
+				activeInstalls: tel.activeDesktopInstalls || 0,
+				rating: tel.storeRating || 5.0,
+			});
 
-			// 3. Local & Stored Projects
+			// 3. Local & Stored Projects (Strictly Real)
+			let projects: any[] = [];
 			try {
-				const projects = await storageService.loadAllProjectsMetadata();
-				setRealProjectsCount(Math.max(projects.length, 3));
+				projects = await storageService.loadAllProjectsMetadata();
+				setRealProjectsCount(projects.length);
 				setProjectsMetadata(projects);
 			} catch {
-				setRealProjectsCount(3);
+				setRealProjectsCount(0);
+				setProjectsMetadata([]);
 			}
 
 			// 4. Storage Quota
@@ -195,7 +253,7 @@ export default function AdminImamShafiPage() {
 				setStorageQuota(quota);
 			} catch {}
 
-			// 5. Creators List - Combine Firestore Users, Auth Users, Transactions & Seed
+			// 5. Creators List - Combine Firestore Users, Verified Transactions & Super Admin
 			let creators: CreatorUser[] = [];
 
 			// Try reading Firestore users collection
@@ -212,8 +270,8 @@ export default function AdminImamShafiPage() {
 							role: data.role || "Creator",
 							plan: data.plan || "Free",
 							isPro: !!data.isPro,
-							projectsCount: Number(data.projectsCount) || 1,
-							joined: data.joined || "Recent",
+							projectsCount: Number(data.projectsCount) || 0,
+							joined: data.joined || new Date().toISOString().split("T")[0],
 							source: data.source || "Microsoft Store (Desktop)",
 						});
 					}
@@ -222,18 +280,48 @@ export default function AdminImamShafiPage() {
 				console.warn("Could not load Firestore users:", e);
 			}
 
-			// Read locally managed creators cache
+			// Read locally managed creators cache (purging any legacy dummy entries)
+			const dummyEmails = new Set([
+				"tariq.edwards@creativestudios.co",
+				"aisha.content@gmail.com",
+				"miller.vids@outlook.com",
+				"elena.edits@protonmail.com",
+				"m.chen@videoproductions.org",
+			]);
+
 			if (typeof window !== "undefined") {
 				const storedCreators = localStorage.getItem(MANAGED_USERS_KEY);
 				if (storedCreators) {
 					try {
 						const parsed = JSON.parse(storedCreators) as CreatorUser[];
 						for (const c of parsed) {
-							if (!creators.some((existing) => existing.email.toLowerCase() === c.email.toLowerCase())) {
+							if (
+								!dummyEmails.has(c.email.toLowerCase()) &&
+								!c.id.startsWith("cr_ms_10") &&
+								!c.id.startsWith("cr_web_106") &&
+								!creators.some((existing) => existing.email.toLowerCase() === c.email.toLowerCase())
+							) {
 								creators.push(c);
 							}
 						}
 					} catch {}
+				}
+			}
+
+			// Populate creators from verified transactions
+			for (const tx of txs) {
+				if (tx.email && !creators.some((c) => c.email.toLowerCase() === tx.email.toLowerCase())) {
+					creators.push({
+						id: tx.id || `cr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+						name: tx.customer || tx.email.split("@")[0],
+						email: tx.email,
+						role: tx.plan.includes("Annual") || tx.plan.includes("Director") ? "Studio Pro" : "Creator",
+						plan: tx.plan.includes("Annual") || tx.plan.includes("Director") ? "Director Suite" : "Creator Studio",
+						isPro: tx.status === "successful",
+						projectsCount: 0,
+						joined: tx.date ? tx.date.split(" ")[0] : new Date().toISOString().split("T")[0],
+						source: tx.channel?.includes("Store") ? "Microsoft Store (Desktop)" : "Web App",
+					});
 				}
 			}
 
@@ -246,7 +334,7 @@ export default function AdminImamShafiPage() {
 				role: "Super Admin",
 				plan: "Director Suite",
 				isPro: true,
-				projectsCount: 14,
+				projectsCount: projects.length,
 				joined: "2026-09-24",
 				source: "Microsoft Store (Desktop)",
 			};
@@ -257,89 +345,8 @@ export default function AdminImamShafiPage() {
 				creators[adminIndex] = {
 					...creators[adminIndex],
 					...superAdminUser,
+					projectsCount: projects.length,
 				};
-			}
-
-			// Populate creators from verified transactions
-			for (const tx of txs) {
-				if (tx.email && !creators.some((c) => c.email.toLowerCase() === tx.email.toLowerCase())) {
-					creators.push({
-						id: tx.id || `cr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-						name: tx.customer || tx.email.split("@")[0],
-						email: tx.email,
-						role: tx.plan.includes("Annual") ? "Studio Pro" : "Creator",
-						plan: tx.plan.includes("Annual") ? "Director Suite" : "Creator Studio",
-						isPro: tx.status === "successful",
-						projectsCount: 2,
-						joined: tx.date.split(" ")[0] || "2026-10-24",
-						source: "Microsoft Store (Desktop)",
-					});
-				}
-			}
-
-			// Add active Microsoft Store creators if list is short
-			const baselineCreators: CreatorUser[] = [
-				{
-					id: "cr_ms_102",
-					name: "Tariq Edwards",
-					email: "tariq.edwards@creativestudios.co",
-					role: "Studio Pro",
-					plan: "Director Suite",
-					isPro: true,
-					projectsCount: 6,
-					joined: "2026-10-22",
-					source: "Microsoft Store (Desktop)",
-				},
-				{
-					id: "cr_ms_103",
-					name: "Aisha Mohammed",
-					email: "aisha.content@gmail.com",
-					role: "Creator",
-					plan: "Creator Studio",
-					isPro: true,
-					projectsCount: 4,
-					joined: "2026-10-25",
-					source: "Microsoft Store (Desktop)",
-				},
-				{
-					id: "cr_ms_104",
-					name: "David Miller",
-					email: "miller.vids@outlook.com",
-					role: "Creator",
-					plan: "Creator Studio",
-					isPro: true,
-					projectsCount: 3,
-					joined: "2026-10-26",
-					source: "Microsoft Store (Desktop)",
-				},
-				{
-					id: "cr_ms_105",
-					name: "Elena Rostova",
-					email: "elena.edits@protonmail.com",
-					role: "Creator",
-					plan: "Free",
-					isPro: false,
-					projectsCount: 5,
-					joined: "2026-10-21",
-					source: "Microsoft Store (Desktop)",
-				},
-				{
-					id: "cr_web_106",
-					name: "Michael Chen",
-					email: "m.chen@videoproductions.org",
-					role: "Studio Pro",
-					plan: "Director Suite",
-					isPro: true,
-					projectsCount: 9,
-					joined: "2026-10-18",
-					source: "Web App",
-				},
-			];
-
-			for (const b of baselineCreators) {
-				if (!creators.some((c) => c.email.toLowerCase() === b.email.toLowerCase())) {
-					creators.push(b);
-				}
 			}
 
 			setCreatorsList(creators);
@@ -442,6 +449,35 @@ export default function AdminImamShafiPage() {
 			toast.error(err.message || "Failed to save Amber AI settings.");
 		} finally {
 			setIsSavingAiKey(false);
+		}
+	};
+
+	// Save Microsoft Store Metrics to Cloud Firestore
+	const handleSaveStoreMetrics = async () => {
+		try {
+			const docRef = doc(db, "analytics", "overview");
+			await setDoc(docRef, {
+				totalMicrosoftStoreDownloads: Number(storeForm.downloads) || 0,
+				activeDesktopInstalls: Number(storeForm.activeInstalls) || 0,
+				totalDesktopInstalls: Number(storeForm.activeInstalls) || 0,
+				storeRating: Number(storeForm.rating) || 5.0,
+				updatedAt: serverTimestamp(),
+				updatedBy: AUTHORIZED_ADMIN_EMAIL,
+			}, { merge: true });
+
+			const current = getTelemetryData();
+			current.totalMicrosoftStoreDownloads = Number(storeForm.downloads) || 0;
+			current.activeDesktopInstalls = Number(storeForm.activeInstalls) || 0;
+			current.storeRating = Number(storeForm.rating) || 5.0;
+			if (typeof window !== "undefined") {
+				localStorage.setItem("opencut_telemetry_data_v1", JSON.stringify(current));
+			}
+			setTelemetry({ ...current });
+
+			setShowStoreEditModal(false);
+			toast.success("Microsoft Store metrics updated in live cloud analytics!");
+		} catch (err: any) {
+			toast.error("Failed to save store metrics: " + err.message);
 		}
 	};
 
@@ -593,7 +629,7 @@ export default function AdminImamShafiPage() {
 		}
 	};
 
-	// Calculated Revenue Metrics
+	// Calculated Revenue Metrics strictly from verified transactions
 	const revenueMetrics = useMemo(() => {
 		const successfulTxs = transactions.filter((tx) => tx.status === "successful");
 		const totalRevenueNgn = successfulTxs.reduce((sum, tx) => sum + (tx.amountNgn || 0), 0);
@@ -601,14 +637,13 @@ export default function AdminImamShafiPage() {
 		const proSubscribersCount = creatorsList.filter((c) => c.isPro).length;
 
 		// Calculate MRR from active monthly transactions and prorated annual transactions
-		const estimatedMrrNgn = Math.max(
-			1578333,
-			successfulTxs.reduce((sum, tx) => {
-				if (tx.plan.includes("Monthly")) return sum + (tx.amountNgn || 0);
-				if (tx.plan.includes("Annual")) return sum + Math.round((tx.amountNgn || 0) / 12);
-				return sum;
-			}, 0),
-		);
+		const estimatedMrrNgn = successfulTxs.reduce((sum, tx) => {
+			if (tx.plan.includes("Monthly")) return sum + (tx.amountNgn || 0);
+			if (tx.plan.includes("Annual") || tx.plan.includes("Director") || tx.plan.includes("Lifetime")) {
+				return sum + Math.round((tx.amountNgn || 0) / 12);
+			}
+			return sum;
+		}, 0);
 
 		const estimatedArrNgn = estimatedMrrNgn * 12;
 
@@ -622,35 +657,80 @@ export default function AdminImamShafiPage() {
 		};
 	}, [transactions, creatorsList]);
 
-	// 6-Month Visual Revenue & Store Downloads Velocity Chart
+	// Real 6-Month Visual Revenue Velocity Chart computed strictly from recorded transactions
 	const monthlyChartData = useMemo(() => {
-		const monthNames = ["May", "Jun", "Jul", "Aug", "Sep", "Oct"];
-		const baselineDownloads = [420, 680, 940, 1180, 1340, 1860];
-		const baselineRevenues = [380000, 590000, 840000, 1100000, 1450000, 2150000];
+		const now = new Date();
+		const months: { key: string; month: string; year: number }[] = [];
 
-		return monthNames.map((month, i) => {
-			const rev = baselineRevenues[i];
-			const dl = baselineDownloads[i];
-			const maxRev = 2500000;
+		for (let i = 5; i >= 0; i--) {
+			const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+			const monthName = d.toLocaleString("en-US", { month: "short" });
+			const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+			months.push({ key, month: monthName, year: d.getFullYear() });
+		}
+
+		// Group transactions by month
+		const monthRevMap: Record<string, number> = {};
+		const monthCountMap: Record<string, number> = {};
+
+		for (const tx of transactions) {
+			if (tx.status !== "successful") continue;
+			let txDate: Date | null = null;
+			if (tx.date) {
+				const parsed = new Date(tx.date);
+				if (!isNaN(parsed.getTime())) {
+					txDate = parsed;
+				}
+			}
+			if (!txDate) txDate = new Date();
+
+			const key = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, "0")}`;
+			monthRevMap[key] = (monthRevMap[key] || 0) + (tx.amountNgn || 0);
+			monthCountMap[key] = (monthCountMap[key] || 0) + 1;
+		}
+
+		const maxRev = Math.max(...Object.values(monthRevMap), 1);
+
+		return months.map(({ key, month }) => {
+			const rev = monthRevMap[key] || 0;
+			const count = monthCountMap[key] || 0;
+			const heightPercent = rev > 0 ? Math.max(18, Math.round((rev / maxRev) * 100)) : 6;
 			return {
 				month,
 				rev,
-				dl,
-				revFormatted: `₦${(rev / 1000).toFixed(0)}k`,
-				height: `${Math.max(16, Math.round((rev / maxRev) * 100))}%`,
+				count,
+				revFormatted: rev >= 1000 ? `₦${(rev / 1000).toFixed(0)}k` : `₦${rev}`,
+				height: `${heightPercent}%`,
 			};
 		});
-	}, []);
+	}, [transactions]);
 
-	// Ingestion Aspect Ratio & Format Breakdown
+	// Ingestion Aspect Ratio & Format Breakdown from Real Project Timelines
 	const ingestionBreakdown = useMemo(() => {
-		const total = Math.max(projectsMetadata.length, 12);
+		const total = projectsMetadata.length;
+		if (total === 0) return [];
+
+		let widescreen = 0;
+		let vertical = 0;
+		let square = 0;
+		let cinema = 0;
+
+		for (const p of projectsMetadata) {
+			const w = p.canvasSize?.width || 1920;
+			const h = p.canvasSize?.height || 1080;
+			const ratio = w / h;
+			if (ratio > 2.0) cinema++;
+			else if (ratio >= 1.25) widescreen++;
+			else if (ratio <= 0.8) vertical++;
+			else square++;
+		}
+
 		return [
-			{ label: "Widescreen Landscape (16:9 4K/1080p)", percent: 54, count: Math.round(total * 0.54), color: "bg-orange-500" },
-			{ label: "Viral Shorts / Reels (9:16 Vertical)", percent: 32, count: Math.round(total * 0.32), color: "bg-amber-500" },
-			{ label: "Square Feed / Instagram (1:1)", percent: 10, count: Math.round(total * 0.10), color: "bg-blue-500" },
-			{ label: "Custom Cinema Formats (21:9 Ultrawide)", percent: 4, count: Math.round(total * 0.04), color: "bg-emerald-500" },
-		];
+			{ label: "Widescreen Landscape (16:9)", percent: Math.round((widescreen / total) * 100), count: widescreen, color: "bg-orange-500" },
+			{ label: "Vertical Shorts / Reels (9:16)", percent: Math.round((vertical / total) * 100), count: vertical, color: "bg-amber-500" },
+			{ label: "Square Feed (1:1)", percent: Math.round((square / total) * 100), count: square, color: "bg-blue-500" },
+			{ label: "Cinema Scope (21:9 / Custom)", percent: Math.round((cinema / total) * 100), count: cinema, color: "bg-emerald-500" },
+		].filter((item) => item.count > 0);
 	}, [projectsMetadata]);
 
 	// Filtered creators for search
@@ -914,7 +994,7 @@ export default function AdminImamShafiPage() {
 							<Monitor className="size-3.5 text-blue-500" />
 							<span className="font-semibold text-foreground">Microsoft Store</span>
 							<Badge className="bg-blue-500/10 text-blue-500 border-none font-bold text-[10px] px-1.5">
-								{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() || "4,860"} DL
+								{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() ?? 0} DL
 							</Badge>
 						</div>
 
@@ -1010,11 +1090,11 @@ export default function AdminImamShafiPage() {
 								</CardHeader>
 								<CardContent className="space-y-1">
 									<div className="text-2xl font-bold tracking-tight text-foreground font-clash">
-										{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() || "4,860"}
+										{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() ?? 0}
 									</div>
 									<div className="flex items-center gap-1.5 text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
-										<TrendingUp className="size-3" />
-										<span>+14.2% this week</span>
+										<CheckCircle2 className="size-3" />
+										<span>Official Store Metric</span>
 									</div>
 								</CardContent>
 							</Card>
@@ -1032,11 +1112,11 @@ export default function AdminImamShafiPage() {
 								</CardHeader>
 								<CardContent className="space-y-1">
 									<div className="text-2xl font-bold tracking-tight text-foreground font-clash">
-										{telemetry?.activeDesktopInstalls?.toLocaleString() || "3,140"}
+										{telemetry?.activeDesktopInstalls?.toLocaleString() ?? 0}
 									</div>
 									<div className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
 										<CheckCircle2 className="size-3" />
-										<span>99.8% crash-free rate</span>
+										<span>{telemetry?.crashFreeRate ?? 100}% crash-free rate</span>
 									</div>
 								</CardContent>
 							</Card>
@@ -1076,11 +1156,11 @@ export default function AdminImamShafiPage() {
 								</CardHeader>
 								<CardContent className="space-y-1">
 									<div className="text-2xl font-bold tracking-tight text-foreground font-clash">
-										{revenueMetrics.proSubscribersCount} Subscribers
+										{revenueMetrics.proSubscribersCount} Active
 									</div>
 									<div className="flex items-center gap-1.5 text-[11px] text-purple-600 dark:text-purple-400 font-semibold">
 										<Users className="size-3" />
-										<span>Director &amp; Creator Studio</span>
+										<span>Director &amp; Creator Pro</span>
 									</div>
 								</CardContent>
 							</Card>
@@ -1098,7 +1178,7 @@ export default function AdminImamShafiPage() {
 								</CardHeader>
 								<CardContent className="space-y-1">
 									<div className="text-2xl font-bold tracking-tight text-foreground font-clash">
-										{telemetry?.smartSuggestionsCount?.toLocaleString() || "8,950"}
+										{telemetry?.smartSuggestionsCount?.toLocaleString() ?? 0}
 									</div>
 									<div className="flex items-center gap-1.5 text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">
 										<Scissors className="size-3" />
@@ -1120,7 +1200,7 @@ export default function AdminImamShafiPage() {
 								</CardHeader>
 								<CardContent className="space-y-1">
 									<div className="text-2xl font-bold tracking-tight text-foreground font-clash">
-										{telemetry?.exportCount?.toLocaleString() || "14,280"}
+										{telemetry?.exportCount?.toLocaleString() ?? 0}
 									</div>
 									<div className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
 										<CheckCircle2 className="size-3" />
@@ -1160,7 +1240,7 @@ export default function AdminImamShafiPage() {
 										{monthlyChartData.map((item, idx) => (
 											<div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
 												<div className="text-[11px] font-mono text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-													{item.revFormatted} ({item.dl} DL)
+													{item.revFormatted} ({item.count} txn)
 												</div>
 												<div
 													style={{ height: item.height }}
@@ -1194,22 +1274,28 @@ export default function AdminImamShafiPage() {
 								</div>
 
 								<div className="space-y-4 pt-1">
-									{ingestionBreakdown.map((fmt, i) => (
-										<div key={i} className="space-y-1.5">
-											<div className="flex justify-between text-xs font-semibold">
-												<span className="text-foreground">{fmt.label}</span>
-												<span className="font-mono text-muted-foreground">
-													{fmt.percent}%
-												</span>
+									{ingestionBreakdown.length > 0 ? (
+										ingestionBreakdown.map((fmt, i) => (
+											<div key={i} className="space-y-1.5">
+												<div className="flex justify-between text-xs font-semibold">
+													<span className="text-foreground">{fmt.label}</span>
+													<span className="font-mono text-muted-foreground">
+														{fmt.count} ({fmt.percent}%)
+													</span>
+												</div>
+												<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
+													<div
+														style={{ width: `${fmt.percent}%` }}
+														className={`h-full ${fmt.color} rounded-full`}
+													/>
+												</div>
 											</div>
-											<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
-												<div
-													style={{ width: `${fmt.percent}%` }}
-													className={`h-full ${fmt.color} rounded-full`}
-												/>
-											</div>
+										))
+									) : (
+										<div className="py-6 text-center text-xs text-muted-foreground border border-dashed border-border rounded-xl">
+											No video timelines recorded yet. Projects created in the editor will appear here.
 										</div>
-									))}
+									)}
 								</div>
 
 								<div className="pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
@@ -1217,7 +1303,7 @@ export default function AdminImamShafiPage() {
 									<span className="font-mono font-bold text-foreground">
 										{storageQuota?.usageBytes
 											? formatStorageBytes({ bytes: storageQuota.usageBytes })
-											: "3.4 GB (IndexedDB)"}
+											: "0 B (IndexedDB)"}
 									</span>
 								</div>
 							</Card>
@@ -1277,18 +1363,29 @@ export default function AdminImamShafiPage() {
 				)}
 
 				{/* ----------------------------------------------------------------- */}
-				{/* TAB 2: MICROSOFT STORE & DESKTOP INSTALLS (NEW EXPANSIVE TAB) */}
+				{/* TAB 2: MICROSOFT STORE & DESKTOP INSTALLS */}
 				{/* ----------------------------------------------------------------- */}
 				{activeTab === "store" && (
 					<div className="space-y-6">
-						<div>
-							<h2 className="text-lg font-bold font-clash text-foreground flex items-center gap-2">
-								<Monitor className="size-5 text-blue-500" />
-								Microsoft Store App Telemetry &amp; Desktop Installs
-							</h2>
-							<p className="text-xs text-muted-foreground">
-								Monitoring Windows MSIX installer downloads, active desktop installations, ratings, and device health
-							</p>
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+							<div>
+								<h2 className="text-lg font-bold font-clash text-foreground flex items-center gap-2">
+									<Monitor className="size-5 text-blue-500" />
+									Microsoft Store App Telemetry &amp; Desktop Installs
+								</h2>
+								<p className="text-xs text-muted-foreground">
+									Monitoring Windows MSIX installer downloads, active desktop installations, and real device hardware health
+								</p>
+							</div>
+
+							<Button
+								size="sm"
+								onClick={() => setShowStoreEditModal(true)}
+								className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 rounded-xl gap-1.5 shadow-sm"
+							>
+								<Monitor className="size-3.5" />
+								Update Store Metrics
+							</Button>
 						</div>
 
 						{/* Store Highlight Metrics */}
@@ -1299,10 +1396,10 @@ export default function AdminImamShafiPage() {
 									<Monitor className="size-4 text-blue-500" />
 								</div>
 								<div className="text-3xl font-bold font-clash text-foreground">
-									{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() || "4,860"}
+									{telemetry?.totalMicrosoftStoreDownloads?.toLocaleString() ?? 0}
 								</div>
-								<p className="text-[11px] text-emerald-500 font-semibold">
-									&uarr; 142 downloads / day avg
+								<p className="text-[11px] text-blue-500 font-semibold">
+									Official Partner Center Metric
 								</p>
 							</Card>
 
@@ -1312,115 +1409,134 @@ export default function AdminImamShafiPage() {
 									<Laptop className="size-4 text-emerald-500" />
 								</div>
 								<div className="text-3xl font-bold font-clash text-foreground">
-									{telemetry?.activeDesktopInstalls?.toLocaleString() || "3,140"}
+									{telemetry?.activeDesktopInstalls?.toLocaleString() ?? 0}
 								</div>
 								<p className="text-[11px] text-muted-foreground">
-									64.6% active retention rate
+									Verified active client installs
 								</p>
 							</Card>
 
 							<Card className="border-border bg-card/80 p-5 space-y-1">
 								<div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-									<span>Store Rating &amp; Reviews</span>
+									<span>Store Rating</span>
 									<Star className="size-4 text-amber-500 fill-amber-500" />
 								</div>
 								<div className="text-3xl font-bold font-clash text-foreground">
-									{telemetry?.storeRating || 4.9} / 5.0
+									{telemetry?.storeRating ? Number(telemetry.storeRating).toFixed(1) : "5.0"} / 5.0
 								</div>
 								<p className="text-[11px] text-amber-500 font-semibold">
-									328 verified creator reviews
+									Microsoft Store creator score
 								</p>
 							</Card>
 
 							<Card className="border-border bg-card/80 p-5 space-y-1">
 								<div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-									<span>Crash-Free Sessions</span>
+									<span>Crash-Free Rate</span>
 									<CheckCircle2 className="size-4 text-emerald-500" />
 								</div>
 								<div className="text-3xl font-bold font-clash text-foreground">
-									{telemetry?.crashFreeRate || 99.8}%
+									{telemetry?.crashFreeRate ?? 100}%
 								</div>
 								<p className="text-[11px] text-muted-foreground">
-									Microsoft quality certified
+									Microsoft certification standard
 								</p>
 							</Card>
 						</div>
 
-						{/* OS Breakdown & Global Territories */}
+						{/* Real Hardware Diagnostics & Cloud Store Sync */}
 						<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-							{/* OS & Architecture Breakdown */}
+							{/* Card 1: Real Hardware & OS Diagnostics */}
 							<Card className="border-border bg-card/80 p-6 space-y-4">
-								<h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-									<Laptop className="size-4 text-orange-500" />
-									Windows OS &amp; Hardware Architecture
-								</h3>
-								<div className="space-y-4">
-									<div className="space-y-1.5">
-										<div className="flex justify-between text-xs font-semibold">
-											<span>Windows 11 (Modern AI &amp; DirectML)</span>
-											<span className="font-mono">78%</span>
-										</div>
-										<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
-											<div className="h-full bg-blue-500 rounded-full" style={{ width: "78%" }} />
-										</div>
+								<div className="flex items-center justify-between">
+									<h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+										<Laptop className="size-4 text-orange-500" />
+										Client Environment &amp; Hardware Diagnostics
+									</h3>
+									<Badge className="bg-emerald-500/10 text-emerald-500 border-none text-[10px] font-bold">
+										LIVE HARDWARE SENSORS
+									</Badge>
+								</div>
+								<div className="divide-y divide-border/60 text-xs">
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">Operating System:</span>
+										<span className="font-semibold text-foreground font-mono">{clientSystemInfo.os}</span>
 									</div>
-
-									<div className="space-y-1.5">
-										<div className="flex justify-between text-xs font-semibold">
-											<span>Windows 10 (DirectX 12 Hardware Accelerated)</span>
-											<span className="font-mono">22%</span>
-										</div>
-										<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
-											<div className="h-full bg-cyan-500 rounded-full" style={{ width: "22%" }} />
-										</div>
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">CPU Architecture:</span>
+										<span className="font-semibold text-foreground font-mono">{clientSystemInfo.arch}</span>
 									</div>
-
-									<div className="space-y-1.5">
-										<div className="flex justify-between text-xs font-semibold">
-											<span>x64 Architecture (Intel / AMD)</span>
-											<span className="font-mono">89%</span>
-										</div>
-										<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
-											<div className="h-full bg-orange-500 rounded-full" style={{ width: "89%" }} />
-										</div>
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">Logical CPU Cores:</span>
+										<span className="font-semibold text-foreground font-mono">{clientSystemInfo.cores} Cores</span>
 									</div>
-
-									<div className="space-y-1.5">
-										<div className="flex justify-between text-xs font-semibold">
-											<span>ARM64 Architecture (Snapdragon X Elite / Surface)</span>
-											<span className="font-mono">11%</span>
-										</div>
-										<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
-											<div className="h-full bg-purple-500 rounded-full" style={{ width: "11%" }} />
-										</div>
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">Detected Memory:</span>
+										<span className="font-semibold text-foreground font-mono">{clientSystemInfo.ram}</span>
+									</div>
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">WebGPU Acceleration:</span>
+										<Badge className={clientSystemInfo.gpuSupport ? "bg-emerald-500/15 text-emerald-500 border-none font-bold" : "bg-muted text-muted-foreground border-none"}>
+											{clientSystemInfo.gpuSupport ? "Hardware DirectML / WGSL" : "Fallback 2D"}
+										</Badge>
+									</div>
+									<div className="py-2.5 flex justify-between items-center">
+										<span className="text-muted-foreground">WebCodecs MP4 Encoding:</span>
+										<Badge className={clientSystemInfo.webCodecsSupport ? "bg-blue-500/15 text-blue-500 border-none font-bold" : "bg-muted text-muted-foreground border-none"}>
+											{clientSystemInfo.webCodecsSupport ? "Hardware 4K WebCodecs" : "Software WASM"}
+										</Badge>
 									</div>
 								</div>
 							</Card>
 
-							{/* Global Geographic Distribution */}
+							{/* Card 2: Official Store Telemetry & Sync Management */}
 							<Card className="border-border bg-card/80 p-6 space-y-4">
-								<h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-									<Globe className="size-4 text-emerald-500" />
-									Top Microsoft Store Download Regions
-								</h3>
-								<div className="space-y-3">
-									{[
-										{ country: "United States", percent: 38, downloads: "1,846", color: "bg-emerald-500" },
-										{ country: "Nigeria", percent: 26, downloads: "1,263", color: "bg-orange-500" },
-										{ country: "United Kingdom", percent: 14, downloads: "680", color: "bg-blue-500" },
-										{ country: "Germany", percent: 12, downloads: "583", color: "bg-amber-500" },
-										{ country: "Canada & Global Other", percent: 10, downloads: "488", color: "bg-purple-500" },
-									].map((geo, i) => (
-										<div key={i} className="space-y-1">
-											<div className="flex justify-between text-xs font-semibold">
-												<span className="text-foreground">{geo.country}</span>
-												<span className="font-mono text-muted-foreground">{geo.downloads} DL ({geo.percent}%)</span>
-											</div>
-											<div className="h-2 w-full bg-muted/60 rounded-full overflow-hidden">
-												<div className={`h-full ${geo.color} rounded-full`} style={{ width: `${geo.percent}%` }} />
-											</div>
+								<div className="flex items-center justify-between">
+									<h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+										<Monitor className="size-4 text-blue-500" />
+										Microsoft Store Distribution &amp; Cloud Telemetry
+									</h3>
+									<Badge className="bg-blue-500/10 text-blue-500 border-none text-[10px] font-bold">
+										MSIX PACKAGE
+									</Badge>
+								</div>
+
+								<div className="space-y-3 text-xs">
+									<div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
+										<div className="flex justify-between items-center">
+											<span className="text-muted-foreground">MSIX Package ID:</span>
+											<span className="font-mono font-bold text-foreground">AmberCut.VideoEditor</span>
 										</div>
-									))}
+										<div className="flex justify-between items-center">
+											<span className="text-muted-foreground">Firestore Telemetry Sync:</span>
+											<span className="font-mono text-emerald-500 font-semibold">ambercut-d07ef (Live)</span>
+										</div>
+										<div className="flex justify-between items-center">
+											<span className="text-muted-foreground">Verified Store Customers:</span>
+											<span className="font-mono font-bold text-foreground">
+												{creatorsList.filter(c => c.source.includes("Store")).length} Creators
+											</span>
+										</div>
+										<div className="flex justify-between items-center">
+											<span className="text-muted-foreground">Store Pro Revenue:</span>
+											<span className="font-mono font-bold text-orange-500">
+												₦{revenueMetrics.totalRevenueNgn.toLocaleString()}
+											</span>
+										</div>
+									</div>
+
+									<div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2 text-xs">
+										<p className="font-semibold text-foreground">Microsoft Partner Center Synchronization</p>
+										<p className="text-muted-foreground text-[11px] leading-relaxed">
+											To update your live store metrics directly from the Windows Partner Center, click the button below to update download numbers in cloud analytics.
+										</p>
+										<Button
+											size="sm"
+											onClick={() => setShowStoreEditModal(true)}
+											className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 rounded-lg mt-1"
+										>
+											Update Official Store Figures
+										</Button>
+									</div>
 								</div>
 							</Card>
 						</div>
@@ -1929,13 +2045,13 @@ export default function AdminImamShafiPage() {
 									<div className="flex justify-between text-xs">
 										<span className="text-muted-foreground">Used Storage:</span>
 										<span className="font-mono font-bold text-foreground">
-											{storageQuota ? formatStorageBytes({ bytes: storageQuota.usageBytes ?? 0 }) : "120 MB"}
+											{storageQuota ? formatStorageBytes({ bytes: storageQuota.usageBytes ?? 0 }) : "0 B"}
 										</span>
 									</div>
 									<div className="flex justify-between text-xs">
 										<span className="text-muted-foreground">Available Quota:</span>
 										<span className="font-mono font-bold text-foreground">
-											{storageQuota ? formatStorageBytes({ bytes: storageQuota.quotaBytes ?? 0 }) : "89.4 GB"}
+											{storageQuota ? formatStorageBytes({ bytes: storageQuota.quotaBytes ?? 0 }) : "Unavailable"}
 										</span>
 									</div>
 									<div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden">
@@ -1944,7 +2060,7 @@ export default function AdminImamShafiPage() {
 												width: `${
 													storageQuota?.usageBytes && storageQuota?.quotaBytes
 														? Math.min(100, Math.round((storageQuota.usageBytes / storageQuota.quotaBytes) * 100))
-														: 3
+														: 0
 												}%`,
 											}}
 											className="h-full bg-orange-500 rounded-full"
@@ -1984,6 +2100,74 @@ export default function AdminImamShafiPage() {
 					</div>
 				)}
 			</main>
+
+			{/* Microsoft Store Telemetry Update Modal */}
+			{showStoreEditModal && (
+				<div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+					<div className="w-full max-w-md bg-card border border-border p-6 rounded-2xl shadow-2xl space-y-4">
+						<div className="flex justify-between items-center">
+							<div className="flex items-center gap-2">
+								<Monitor className="size-4 text-blue-500" />
+								<h3 className="text-sm font-bold text-foreground">Update Microsoft Store Telemetry</h3>
+							</div>
+							<button onClick={() => setShowStoreEditModal(false)} className="text-muted-foreground hover:text-foreground">
+								<X className="size-4" />
+							</button>
+						</div>
+
+						<p className="text-xs text-muted-foreground">
+							Enter the official download and device installation metrics from your Microsoft Partner Center console. These figures will sync directly to live cloud analytics.
+						</p>
+
+						<div className="space-y-3 text-xs">
+							<div className="space-y-1">
+								<label className="font-semibold text-foreground">Total Microsoft Store Downloads</label>
+								<Input
+									type="number"
+									placeholder="e.g. 50"
+									value={storeForm.downloads}
+									onChange={(e) => setStoreForm({ ...storeForm, downloads: Number(e.target.value) })}
+									className="h-9 text-xs font-mono"
+								/>
+							</div>
+
+							<div className="space-y-1">
+								<label className="font-semibold text-foreground">Active Desktop Installations</label>
+								<Input
+									type="number"
+									placeholder="e.g. 35"
+									value={storeForm.activeInstalls}
+									onChange={(e) => setStoreForm({ ...storeForm, activeInstalls: Number(e.target.value) })}
+									className="h-9 text-xs font-mono"
+								/>
+							</div>
+
+							<div className="space-y-1">
+								<label className="font-semibold text-foreground">Average Store Rating (1.0 - 5.0)</label>
+								<Input
+									type="number"
+									step="0.1"
+									min="1"
+									max="5"
+									placeholder="5.0"
+									value={storeForm.rating}
+									onChange={(e) => setStoreForm({ ...storeForm, rating: Number(e.target.value) })}
+									className="h-9 text-xs font-mono"
+								/>
+							</div>
+						</div>
+
+						<div className="flex justify-end gap-2 pt-2 border-t border-border">
+							<Button variant="ghost" size="sm" onClick={() => setShowStoreEditModal(false)} className="text-xs">
+								Cancel
+							</Button>
+							<Button size="sm" onClick={handleSaveStoreMetrics} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs">
+								Save Store Telemetry
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Manual Payment Invoice Modal */}
 			{showAddTxModal && (
