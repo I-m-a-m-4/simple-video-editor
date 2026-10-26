@@ -7,7 +7,6 @@ node_modules
 .cursorignore
 .turbo
 
-.env*
 !*.env.example
 
 # cursor
@@ -27,6 +26,8 @@ target/
 .cargo-tools/
 
 rust-migration-notes.md
-src-tauri/gen/branch_structure.json
+src-tauri/gen/
+branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
+config.bat
